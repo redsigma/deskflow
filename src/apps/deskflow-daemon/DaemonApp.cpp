@@ -28,6 +28,7 @@
 #endif
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QSettings>
 
@@ -54,6 +55,64 @@ void DaemonApp::setConfigFile(const QString &configFile)
   Settings::setValue(Settings::Daemon::ConfigFile, configFile);
 }
 
+QString DaemonApp::resolveCoreExecutablePath(const QFileInfo &configFileInfo) const
+{
+  const auto daemonCorePath = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
+
+  const auto settingsDir = configFileInfo.absoluteDir();
+  const bool isPortableSettingsDir =
+      settingsDir.dirName().compare(QStringLiteral("settings"), Qt::CaseInsensitive) == 0;
+  if (!isPortableSettingsDir) {
+    LOG_DEBUG(
+        "config file is not in a portable settings dir, using application dir core path: %s", qPrintable(daemonCorePath)
+    );
+    return daemonCorePath;
+  }
+
+  QDir appDir = settingsDir;
+  const bool hasPortableAppParentDir = appDir.cdUp();
+  if (!hasPortableAppParentDir) {
+    LOG_WARN(
+        "portable settings dir is abnormal (cannot resolve parent app dir), using application dir core path: %s",
+        qPrintable(daemonCorePath)
+    );
+    return daemonCorePath;
+  }
+
+  // Portable mapping: <app>/settings/Deskflow.conf -> <app>/deskflow-core.exe
+  const auto portableCorePath = appDir.filePath(kCoreBinName);
+  const bool hasPortableCoreBinary = QFileInfo(portableCorePath).isFile();
+  if (!hasPortableCoreBinary) {
+    LOG_DEBUG("using application dir core path: %s", qPrintable(daemonCorePath));
+    return daemonCorePath;
+  }
+
+  LOG_DEBUG("using portable settings dir: %s", qPrintable(portableCorePath));
+  return portableCorePath;
+}
+
+bool DaemonApp::isValidCoreExecutablePath(const QString &corePath) const
+{
+  const bool isRemotePath = corePath.startsWith(QStringLiteral("\\\\")) || corePath.startsWith(QStringLiteral("//"));
+  if (isRemotePath) {
+    LOG_ERR("cannot apply watchdog command: remote core executable paths are not allowed: %s", qPrintable(corePath));
+    return false;
+  }
+
+  const auto coreFileInfo = QFileInfo(corePath);
+  if (!coreFileInfo.exists()) {
+    LOG_ERR("cannot apply watchdog command: core executable path does not exist: %s", qPrintable(corePath));
+    return false;
+  }
+
+  if (!coreFileInfo.isFile()) {
+    LOG_ERR("cannot apply watchdog command: core executable path is not a file: %s", qPrintable(corePath));
+    return false;
+  }
+
+  return true;
+}
+
 void DaemonApp::applyWatchdogCommand() const
 {
 #if defined(Q_OS_WIN)
@@ -75,6 +134,12 @@ void DaemonApp::applyWatchdogCommand() const
     return;
   }
 
+  const auto configFileInfo = QFileInfo(m_configFile);
+  if (!configFileInfo.isFile()) {
+    LOG_ERR("cannot apply watchdog command: config file is not a file: %s", qPrintable(m_configFile));
+    return;
+  }
+
   QSettings config(m_configFile, QSettings::IniFormat);
   const auto coreMode = config.value(Settings::Core::CoreMode).toInt();
   const auto elevate = config.value(Settings::Daemon::Elevate, !Settings::isPortableMode()).toBool();
@@ -89,7 +154,12 @@ void DaemonApp::applyWatchdogCommand() const
     return;
   }
 
-  const auto corePath = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
+  const auto corePath = resolveCoreExecutablePath(configFileInfo);
+  if (!isValidCoreExecutablePath(corePath)) {
+    return;
+  }
+
+  LOG_INFO("watchdog will launch core executable: %s", qPrintable(corePath));
   const auto command = QStringLiteral("\"%1\" %2 --settings \"%3\"").arg(corePath, modeArg, m_configFile).toStdString();
 
   LOG_DEBUG("applying watchdog command (elevate: %s)", elevate ? "yes" : "no");

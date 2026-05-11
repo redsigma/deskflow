@@ -14,6 +14,7 @@ class IEventQueue;
 class FileLogOutputter;
 class QLocalServer;
 class QCoreApplication;
+class QFileInfo;
 
 namespace deskflow::core::ipc {
 class DaemonIpcServer;
@@ -47,6 +48,8 @@ private:
   int daemonLoop();
   void saveLogLevel(const QString &logLevel) const;
   void setConfigFile(const QString &configFile);
+  QString resolveCoreExecutablePath(const QFileInfo &configFileInfo) const;
+  bool isValidCoreExecutablePath(const QString &corePath) const;
   void applyWatchdogCommand() const;
   void clearWatchdogCommand();
   void clearSettings();

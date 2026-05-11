@@ -13,6 +13,7 @@
 #include "base/Log.h"
 #include "common/Constants.h"
 #include "common/ExitCodes.h"
+#include "common/Settings.h"
 #include "deskflow/ClientApp.h"
 #include "deskflow/ServerApp.h"
 #include "deskflow/ipc/CoreIpcServer.h"
@@ -22,6 +23,7 @@
 #endif
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QSharedMemory>
 #include <QTextStream>
@@ -57,78 +59,93 @@ void showHelp(const CoreArgParser &parser)
   QTextStream(stdout) << parser.helpText();
 }
 
-App *createApp(const CoreArgParser &parser, EventQueue &events, const QString &processName)
+App *createApp(const bool serverMode, const bool clientMode, EventQueue &events, const QString &processName)
 {
-  if (parser.serverMode()) {
+  if (serverMode) {
     return new ServerApp(&events, processName);
-  } else if (parser.clientMode()) {
+  }
+
+  if (clientMode) {
     return new ClientApp(&events, processName);
   }
+
   return nullptr;
 }
 
 int main(int argc, char **argv)
 {
-#if defined(Q_OS_WIN)
-  {
-    // HACK to make sure settings gets the correct qApp path
-    QCoreApplication m(argc, argv);
-  }
-
-  ArchMiscWindows::setInstanceWin32(GetModuleHandle(nullptr));
-#endif
-
   Arch arch;
   arch.init();
 
   Log log;
   qInstallMessageHandler(qtMessageHandler);
 
-  QStringList args;
-  for (int i = 0; i < argc; i++)
-    args.append(argv[i]);
+  bool serverMode = false;
+  bool clientMode = false;
 
-  CoreArgParser parser(args);
+#if defined(Q_OS_WIN)
+  ArchMiscWindows::setInstanceWin32(GetModuleHandle(nullptr));
 
-  // Print any parser errors
-  if (!parser.errorText().isEmpty()) {
-    QTextStream(stdout) << parser.errorText() << "\n";
+  // Keep a Qt app object alive while parsing args and initializing settings so
+  // portableSettingsFile() can safely use applicationDirPath().
+  int bootstrapArgc = argc;
+  QCoreApplication bootstrapApp(bootstrapArgc, argv);
+#endif
+  {
+    QStringList args;
+    for (int i = 0; i < argc; i++)
+      args.append(argv[i]);
+
+    CoreArgParser parser(args);
+
+    // Print any parser errors
+    if (!parser.errorText().isEmpty()) {
+      QTextStream(stdout) << parser.errorText() << "\n";
+    }
+
+    if (parser.help()) {
+      showHelp(parser);
+      return s_exitSuccess;
+    }
+
+    if (parser.version()) {
+      QTextStream(stdout) << parser.versionText();
+      return s_exitSuccess;
+    }
+
+    // Before we check any more args we need to check for a duplicate process.
+    // Create a shared memory segment with a unique key
+    // This is to prevent a new instance from running if one is already running
+    QSharedMemory sharedMemory(kCoreBinName);
+
+    // Attempt to attach first and detach in order to clean up stale shm chunks
+    // This can happen if the previous instance was killed or crashed
+    if (sharedMemory.attach())
+      sharedMemory.detach();
+
+    if (!sharedMemory.create(1) && parser.singleInstanceOnly()) {
+      LOG_WARN("an instance of deskflow core is already running");
+      return s_exitDuplicate;
+    }
+
+    parser.parse();
+    serverMode = parser.serverMode();
+    clientMode = parser.clientMode();
+
+    LOG_INFO("tls trusted servers db: %s", qPrintable(Settings::tlsTrustedServersDb()));
   }
 
-  if (parser.help()) {
-    showHelp(parser);
-    return s_exitSuccess;
-  }
-
-  if (parser.version()) {
-    QTextStream(stdout) << parser.versionText();
-    return s_exitSuccess;
-  }
-
-  // Before we check any more args we need to check for a duplicate process.
-  // Create a shared memory segment with a unique key
-  // This is to prevent a new instance from running if one is already running
-  QSharedMemory sharedMemory(kCoreBinName);
-
-  // Attempt to attach first and detach in order to clean up stale shm chunks
-  // This can happen if the previous instance was killed or crashed
-  if (sharedMemory.attach())
-    sharedMemory.detach();
-
-  if (!sharedMemory.create(1) && parser.singleInstanceOnly()) {
-    LOG_WARN("an instance of deskflow core is already running");
-    return s_exitDuplicate;
-  }
-
-  parser.parse();
+  QApplication app(argc, argv);
+  QApplication::setApplicationName(QStringLiteral("%1 Core").arg(kAppName));
 
   EventQueue events;
   const auto processName = QFileInfo(argv[0]).fileName();
 
-  App *coreApp = createApp(parser, events, processName);
-
-  QApplication app(argc, argv);
-  QApplication::setApplicationName(QStringLiteral("%1 Core").arg(kAppName));
+  App *coreApp = createApp(serverMode, clientMode, events, processName);
+  if (coreApp == nullptr) {
+    qFatal("failed to determine core mode");
+    return s_exitFailed;
+  }
 
   const auto ipcServer = new deskflow::core::ipc::CoreIpcServer(&app); // NOSONAR - Qt managed
   QObject::connect(
