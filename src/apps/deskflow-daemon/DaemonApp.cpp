@@ -160,10 +160,20 @@ void DaemonApp::applyWatchdogCommand() const
   }
 
   LOG_INFO("watchdog will launch core executable: %s", qPrintable(corePath));
-  const auto command = QStringLiteral("\"%1\" %2 --settings \"%3\"").arg(corePath, modeArg, m_configFile).toStdString();
+  const auto commandText = QStringLiteral("\"%1\" %2 --settings \"%3\"").arg(corePath, modeArg, m_configFile);
+  const bool isSameWatchdogCommand =
+      m_hasAppliedWatchdogCommand && m_appliedWatchdogCommand == commandText && m_appliedWatchdogElevate == elevate;
+  if (isSameWatchdogCommand) {
+    return;
+  }
+
+  const auto command = commandText.toStdString();
 
   LOG_DEBUG("applying watchdog command (elevate: %s)", elevate ? "yes" : "no");
   m_pWatchdog->setProcessConfig(command, elevate);
+  m_appliedWatchdogCommand = commandText;
+  m_appliedWatchdogElevate = elevate;
+  m_hasAppliedWatchdogCommand = true;
 #else
   LOG_ERR("applying watchdog command not implemented on this platform");
 #endif
@@ -179,6 +189,9 @@ void DaemonApp::clearWatchdogCommand()
 
 #if defined(Q_OS_WIN)
   m_pWatchdog->setProcessConfig("", false);
+  m_appliedWatchdogCommand.clear();
+  m_appliedWatchdogElevate = false;
+  m_hasAppliedWatchdogCommand = false;
 #else
   LOG_ERR("clearing watchdog command not implemented on this platform");
 #endif
@@ -188,6 +201,9 @@ void DaemonApp::clearSettings()
 {
   LOG_INFO("clearing daemon settings");
   m_configFile.clear();
+  m_appliedWatchdogCommand.clear();
+  m_appliedWatchdogElevate = false;
+  m_hasAppliedWatchdogCommand = false;
   Settings::setValue(Settings::Daemon::ConfigFile);
   Settings::setValue(Settings::Daemon::LogFile);
   Settings::setValue(Settings::Daemon::LogLevel);

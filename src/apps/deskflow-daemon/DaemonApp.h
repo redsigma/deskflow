@@ -64,5 +64,8 @@ private:
   FileLogOutputter *m_pFileLogOutputter = nullptr;
   deskflow::core::ipc::DaemonIpcServer *m_ipcServer = nullptr;
   QString m_configFile;
+  mutable QString m_appliedWatchdogCommand;
+  mutable bool m_appliedWatchdogElevate = false;
+  mutable bool m_hasAppliedWatchdogCommand = false;
   bool m_foreground = false;
 };

@@ -5,6 +5,13 @@
 name: Continuous Integration
 
 on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Run release publish steps (disabled by default)"
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [master]
     tags:
@@ -426,7 +433,7 @@ jobs:
 
   release:
     needs: ci-passed
-    if: (github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v'))
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
     runs-on: ubuntu-latest
 
     steps:

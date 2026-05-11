@@ -141,6 +141,8 @@ void CoreProcess::onProcessReadyReadStandardError()
 void CoreProcess::daemonIpcClientConnected()
 {
   applyLogLevel();
+  const auto configFile = QFileInfo(Settings::settingsFile()).absoluteFilePath();
+  m_daemonIpcClient->sendConfigFile(configFile);
   m_daemonIpcClient->requestLogPath();
 }
 
@@ -248,10 +250,9 @@ void CoreProcess::startProcessFromDaemon()
     qFatal("core process must be in starting state");
   }
 
-  const auto configFile = QFileInfo(Settings::settingsFile()).absoluteFilePath();
-  qInfo("sending start to daemon (config file: %s)", qPrintable(configFile));
-
-  auto sendStart = [this, configFile] {
+  auto sendStart = [this] {
+    const auto configFile = QFileInfo(Settings::settingsFile()).absoluteFilePath();
+    qInfo("sending start to daemon (config file: %s)", qPrintable(configFile));
     m_daemonIpcClient->sendConfigFile(configFile);
     m_daemonIpcClient->sendStartProcess();
     setProcessState(ProcessState::Started);
