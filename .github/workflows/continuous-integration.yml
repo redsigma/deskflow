@@ -410,6 +410,8 @@ jobs:
   release:
     needs: ci-passed
     if: (github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v'))
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
 
     steps:
