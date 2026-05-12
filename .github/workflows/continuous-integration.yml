@@ -83,6 +83,8 @@ jobs:
   main-build:
     needs: lint-clang
     name: ${{ matrix.target.name }}
+    permissions:
+      contents: write
     runs-on: ${{ matrix.target.runs-on }}
     container: ${{ matrix.target.container }}
     timeout-minutes: ${{ matrix.target.timeout }}
@@ -413,6 +415,8 @@ jobs:
   release:
     needs: ci-passed
     if: (github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v'))
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
 
     steps:

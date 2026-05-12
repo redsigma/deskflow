@@ -26,6 +26,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
 jobs:
   codeql:
     runs-on: ubuntu-latest
