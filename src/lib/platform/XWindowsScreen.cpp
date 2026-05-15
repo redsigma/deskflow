@@ -335,6 +335,10 @@ void XWindowsScreen::leave()
     m_filtered.clear();
   }
 
+  if (!m_isPrimary) {
+    m_keyState->releaseNonToggleModifiers();
+  }
+
   // now off screen
   m_isOnScreen = false;
 }

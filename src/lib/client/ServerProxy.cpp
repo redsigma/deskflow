@@ -23,6 +23,28 @@
 
 #include <cstring>
 
+namespace {
+bool isModifierKeyId(const KeyID id)
+{
+  switch (id) {
+  case kKeyShift_L:
+  case kKeyShift_R:
+  case kKeyControl_L:
+  case kKeyControl_R:
+  case kKeyAlt_L:
+  case kKeyAlt_R:
+  case kKeyAltGr:
+  case kKeyMeta_L:
+  case kKeyMeta_R:
+  case kKeySuper_L:
+  case kKeySuper_R:
+    return true;
+  default:
+    return false;
+  }
+}
+} // namespace
+
 //
 // ServerProxy
 //
@@ -596,7 +618,13 @@ void ServerProxy::keyDown(uint16_t id, uint16_t mask, uint16_t button, const std
   KeyID id2 = translateKey(static_cast<KeyID>(id));
   KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
   if (id2 != static_cast<KeyID>(id) || mask2 != static_cast<KeyModifierMask>(mask))
-    LOG_VERBOSE("key down translated to id=0x%08x, mask=0x%04x", id2, mask2);
+    LOG_DEBUG1("key down translated to id=0x%08x, mask=0x%04x", id2, mask2);
+  if (isModifierKeyId(id2)) {
+    LOG_DEBUG(
+        "modifier relay down srcId=0x%04x dstId=0x%04x srcMask=0x%04x dstMask=0x%04x button=0x%04x", id, id2, mask,
+        mask2, button
+    );
+  }
 
   // forward
   m_client->keyDown(id2, mask2, button, lang);
@@ -646,7 +674,13 @@ void ServerProxy::keyUp()
   KeyID id2 = translateKey(static_cast<KeyID>(id));
   KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
   if (id2 != static_cast<KeyID>(id) || mask2 != static_cast<KeyModifierMask>(mask))
-    LOG_VERBOSE("key up translated to id=0x%08x, mask=0x%04x", id2, mask2);
+    LOG_DEBUG1("key up translated to id=0x%08x, mask=0x%04x", id2, mask2);
+  if (isModifierKeyId(id2)) {
+    LOG_DEBUG(
+        "modifier relay up srcId=0x%04x dstId=0x%04x srcMask=0x%04x dstMask=0x%04x button=0x%04x", id, id2, mask,
+        mask2, button
+    );
+  }
 
   // forward
   m_client->keyUp(id2, mask2, button);
@@ -876,3 +910,4 @@ void ServerProxy::setActiveServerLanguage(const std::string_view &language)
     LOG_VERBOSE("active server layout is empty");
   }
 }
+
