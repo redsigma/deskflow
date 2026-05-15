@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
+#include <set>
 #define XK_MISCELLANY
 #define XK_XKB_KEYS
 #include <X11/keysymdef.h>
@@ -199,6 +200,114 @@ void XWindowsKeyState::pollPressedKeys(KeyButtonSet &pressedKeys) const
         pressedKeys.insert(8 * i + j);
       }
     }
+  }
+}
+
+bool XWindowsKeyState::shouldReleaseModifierBit(const uint32_t modifierBit)
+{
+  return modifierBit != kKeyModifierBitCapsLock && modifierBit != kKeyModifierBitNumLock &&
+         modifierBit != kKeyModifierBitScrollLock;
+}
+
+uint32_t XWindowsKeyState::getModifierBitForKeycode(const KeyCode keycode) const
+{
+  int keysymsPerKeycode = 0;
+  KeySym *keysyms = XGetKeyboardMapping(m_display, keycode, 1, &keysymsPerKeycode);
+  if (keysyms == nullptr) {
+    return kKeyModifierBitNone;
+  }
+  if (keysymsPerKeycode <= 0) {
+    XFree(keysyms);
+    return kKeyModifierBitNone;
+  }
+
+  uint32_t bit = kKeyModifierBitNone;
+  for (int i = 0; i < keysymsPerKeycode; ++i) {
+    if (keysyms[i] == NoSymbol) {
+      continue;
+    }
+
+    const auto keysymBit = XDGKeyUtil::getModifierBitForKeySym(keysyms[i]);
+    if (keysymBit == kKeyModifierBitNone) {
+      continue;
+    }
+
+    bit = keysymBit;
+    if (shouldReleaseModifierBit(keysymBit)) {
+      break;
+    }
+  }
+
+  XFree(keysyms);
+  return bit;
+}
+
+std::map<KeyCode, unsigned int> XWindowsKeyState::getModifierButtonsForRelease(bool &usingLastGoodSource) const
+{
+  usingLastGoodSource = false;
+
+  std::map<KeyCode, unsigned int> modifierButtons;
+  XModifierKeymap *modifiers = XGetModifierMapping(m_display);
+  if (modifiers != nullptr) {
+    for (unsigned int i = 0; i < 8; ++i) {
+      const KeyCode *buttons = modifiers->modifiermap + i * modifiers->max_keypermod;
+      for (int j = 0; j < modifiers->max_keypermod; ++j) {
+        modifierButtons.insert(std::make_pair(buttons[j], i));
+      }
+    }
+    XFreeModifiermap(modifiers);
+  }
+  modifierButtons.erase(0);
+
+  if (!modifierButtons.empty()) {
+    return modifierButtons;
+  }
+
+  if (!m_lastGoodNonXKBModifiers.empty()) {
+    usingLastGoodSource = true;
+    return m_lastGoodNonXKBModifiers;
+  }
+
+  return {};
+}
+
+void XWindowsKeyState::releaseNonToggleModifiers() const
+{
+  bool usingLastGoodSource = false;
+  const auto modifierButtons = getModifierButtonsForRelease(usingLastGoodSource);
+  if (modifierButtons.empty()) {
+    LOG_DEBUG("cannot release non-toggle X11 modifiers: no current or last-good modifier map available");
+    return;
+  }
+
+  std::set<int> keycodesToRelease;
+  int toggleFilteredCount = 0;
+  int unknownModifierCount = 0;
+  for (const auto &[keycode, modifierIndex] : modifierButtons) {
+    const auto modifierBit = getModifierBitForKeycode(keycode);
+    if (modifierBit == kKeyModifierBitNone) {
+      ++unknownModifierCount;
+      LOG_DEBUG2("x11 modifier keycode %d has unknown modifier classification (mod index %u)", keycode, modifierIndex);
+    } else if (!shouldReleaseModifierBit(modifierBit)) {
+      ++toggleFilteredCount;
+      continue;
+    }
+
+    keycodesToRelease.insert(keycode);
+  }
+
+  LOG_DEBUG(
+      "releasing non-toggle X11 modifiers from %s map: candidates=%d filtered-toggles=%d unknown=%d releasing=%d",
+      usingLastGoodSource ? "last-good" : "current", static_cast<int>(modifierButtons.size()), toggleFilteredCount,
+      unknownModifierCount, static_cast<int>(keycodesToRelease.size())
+  );
+
+  for (const auto keycode : keycodesToRelease) {
+    XTestFakeKeyEvent(m_display, keycode, False, CurrentTime);
+  }
+
+  if (!keycodesToRelease.empty()) {
+    XFlush(m_display);
   }
 }
 

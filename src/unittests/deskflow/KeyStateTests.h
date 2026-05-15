@@ -25,7 +25,11 @@ private Q_SLOTS:
   void updateKeyState_pollDoesNothing_keyNotSet();
   void updateKeyState_activeModifiers_maskNotSet();
   void fakeKeyRepeat_invalidKey_returnsFalse();
+  void fakeKeyRepeat_zeroServerButton_returnsFalse();
   void fakeKeyUp_buttonNotDown_returnsFalse();
+  void fakeKeyDown_maskedServerButton_keyUpWorks();
+  void fakeKeyDown_zeroServerButton_keyUpIgnored();
+  void fakeAllKeysUp_modifierKey_clearsStateAndMapping();
   void isKeyDown_noKeysDown_returnsFalse();
   void isKeyDown_keyDown_retrunsTrue();
   void updateKeyState_pollInsertsSingleKey_keyIsDown();

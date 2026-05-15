@@ -33,6 +33,13 @@ elseif(UNIX)
       SOURCE XWindowsClipboardTests.cpp
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
     )
+    create_test(
+      NAME XWindowsKeyStateTests
+      DEPENDS platform
+      LIBS base arch
+      SOURCE XWindowsKeyStateTests.cpp
+      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
+    )
   endif()
 
   # Add Wayland clipboard tests when Wayland support is available

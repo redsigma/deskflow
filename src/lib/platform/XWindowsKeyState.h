@@ -92,6 +92,8 @@ public:
   KeyModifierMask pollActiveModifiers() const override;
   int32_t pollActiveGroup() const final;
   void pollPressedKeys(KeyButtonSet &pressedKeys) const override;
+  void releaseNonToggleModifiers() const;
+  static bool shouldReleaseModifierBit(uint32_t modifierBit);
 
 protected:
   // KeyState overrides
@@ -105,6 +107,8 @@ private:
   bool hasModifiersXKB() const;
   int getEffectiveGroup(KeyCode, int group) const;
   uint32_t getGroupFromState(unsigned int state) const;
+  uint32_t getModifierBitForKeycode(KeyCode keycode) const;
+  std::map<KeyCode, unsigned int> getModifierButtonsForRelease(bool &usingLastGoodSource) const;
 
   //! Create and send language change request to \p group by DBus interface
   /*!

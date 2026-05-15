@@ -636,6 +636,28 @@ static const KeyID s_numpadTable[] = {
     kKeyKP_7,      0x0037,     kKeyKP_8,         0x0038,       kKeyKP_9,        0x0039
 };
 
+namespace {
+bool isModifierKey(const KeyID id)
+{
+  switch (id) {
+  case kKeyShift_L:
+  case kKeyShift_R:
+  case kKeyControl_L:
+  case kKeyControl_R:
+  case kKeyAlt_L:
+  case kKeyAlt_R:
+  case kKeyAltGr:
+  case kKeyMeta_L:
+  case kKeyMeta_R:
+  case kKeySuper_L:
+  case kKeySuper_R:
+    return true;
+  default:
+    return false;
+  }
+}
+} // namespace
+
 //
 // KeyState
 //
@@ -794,11 +816,12 @@ void KeyState::setHalfDuplexMask(KeyModifierMask mask)
 
 void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, const std::string &lang)
 {
+  const KeyButton maskedServerID = serverID & kButtonMask;
+
   // if this server key is already down then this is probably a
   // mis-reported autorepeat.
-  serverID &= kButtonMask;
-  if (m_serverKeys[serverID] != 0) {
-    fakeKeyRepeat(id, mask, 1, serverID, lang);
+  if (maskedServerID != 0 && m_serverKeys[maskedServerID] != 0) {
+    fakeKeyRepeat(id, mask, 1, maskedServerID, lang);
     return;
   }
 
@@ -832,7 +855,17 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
     ++m_keys[localID];
     ++m_syntheticKeys[localID];
     m_keyClientData[localID] = keyItem->m_client;
-    m_serverKeys[serverID] = localID;
+    if (maskedServerID != 0) {
+      m_serverKeys[maskedServerID] = localID;
+    } else {
+      LOG_DEBUG("key down has no server key button mapping, id=0x%04x mask=0x%04x", id, mask);
+    }
+  }
+
+  if (isModifierKey(id)) {
+    LOG_DEBUG(
+        "modifier key down paired id=0x%04x mask=0x%04x server=0x%04x local=0x%04x", id, mask, maskedServerID, localID
+    );
   }
 
   // generate key events
@@ -841,11 +874,15 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
 
 bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton serverID, const std::string &lang)
 {
-  LOG_VERBOSE("fakeKeyRepeat");
-  serverID &= kButtonMask;
+  LOG_DEBUG2("fakeKeyRepeat");
+  const KeyButton maskedServerID = serverID & kButtonMask;
+  if (maskedServerID == 0) {
+    LOG_DEBUG("ignored key repeat with no server button mapping id=0x%04x mask=0x%04x", id, mask);
+    return false;
+  }
 
   // if we haven't seen this button go down then ignore it
-  KeyButton oldLocalID = m_serverKeys[serverID];
+  KeyButton oldLocalID = m_serverKeys[maskedServerID];
   if (oldLocalID == 0) {
     return false;
   }
@@ -888,7 +925,13 @@ bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyB
     ++m_keys[localID];
     ++m_syntheticKeys[localID];
     m_keyClientData[localID] = keyItem->m_client;
-    m_serverKeys[serverID] = localID;
+    m_serverKeys[maskedServerID] = localID;
+  }
+
+  if (isModifierKey(id)) {
+    LOG_DEBUG(
+        "modifier key repeat paired id=0x%04x mask=0x%04x server=0x%04x local=0x%04x", id, mask, maskedServerID, localID
+    );
   }
 
   // generate key events
@@ -898,8 +941,14 @@ bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyB
 
 bool KeyState::fakeKeyUp(KeyButton serverID)
 {
+  const KeyButton maskedServerID = serverID & kButtonMask;
+  if (maskedServerID == 0) {
+    LOG_DEBUG("ignored key up with no server button mapping");
+    return false;
+  }
+
   // if we haven't seen this button go down then ignore it
-  KeyButton localID = m_serverKeys[serverID & kButtonMask];
+  KeyButton localID = m_serverKeys[maskedServerID];
   if (localID == 0) {
     return false;
   }
@@ -911,7 +960,7 @@ bool KeyState::fakeKeyUp(KeyButton serverID)
   // note keys down
   --m_keys[localID];
   --m_syntheticKeys[localID];
-  m_serverKeys[serverID] = 0;
+  m_serverKeys[maskedServerID] = 0;
 
   // check if this is a modifier
   auto i = m_activeModifiers.begin();
@@ -936,23 +985,44 @@ bool KeyState::fakeKeyUp(KeyButton serverID)
 
   // generate key events
   fakeKeys(keys, 1);
+  LOG_DEBUG("key up paired server=0x%04x local=0x%04x mask=0x%04x", maskedServerID, localID, m_mask);
   return true;
 }
 
 void KeyState::fakeAllKeysUp()
 {
+  std::vector<KeyButton> trackedModifierButtons;
+  trackedModifierButtons.reserve(m_activeModifiers.size());
+  for (const auto &[modifierMask, keyItem] : m_activeModifiers) {
+    (void)modifierMask;
+    if (!keyItem.m_lock) {
+      trackedModifierButtons.push_back(keyItem.m_button);
+    }
+  }
+  std::ranges::sort(trackedModifierButtons);
+  trackedModifierButtons.erase(
+      std::unique(trackedModifierButtons.begin(), trackedModifierButtons.end()), trackedModifierButtons.end()
+  );
+
   Keystrokes keys;
+  uint32_t releaseCount = 0;
   for (KeyButton i = 0; i < IKeyState::s_numButtons; ++i) {
     if (m_syntheticKeys[i] > 0) {
       keys.push_back(Keystroke(i, false, false, m_keyClientData[i]));
       m_keys[i] = 0;
       m_syntheticKeys[i] = 0;
+      ++releaseCount;
     }
   }
   fakeKeys(keys, 1);
   memset(&m_serverKeys, 0, sizeof(m_serverKeys));
   m_activeModifiers.clear();
   m_mask = pollActiveModifiers();
+  LOG_DEBUG("fakeAllKeysUp released %u synthetic keys", releaseCount);
+  for (const auto button : trackedModifierButtons) {
+    LOG_DEBUG("fakeAllKeysUp tracked modifier local button before clear: 0x%04x", button);
+  }
+  LOG_DEBUG1("modifiers after fakeAllKeysUp: 0x%04x", m_mask);
 }
 
 bool KeyState::fakeMediaKey(KeyID)
@@ -1141,3 +1211,4 @@ KeyState::AddActiveModifierContext::AddActiveModifierContext(
 {
   // do nothing
 }
+
