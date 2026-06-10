@@ -336,7 +336,8 @@ void XWindowsScreen::leave()
   }
 
   if (!m_isPrimary) {
-    m_keyState->releaseNonToggleModifiers();
+    const auto released = m_keyState->releaseNonToggleModifiers();
+    LOG_DEBUG("non-toggle modifier release on leave: released=%u", released);
   }
 
   // now off screen

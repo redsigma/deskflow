@@ -16,6 +16,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QTimer>
+#include <cstdint>
 
 namespace deskflow::gui {
 
@@ -47,6 +48,9 @@ public:
   void applyLogLevel();
   void clearSettings();
   void retryDaemon();
+  void sendProbeKeyDown(const QString &keyStroke);
+  void sendProbeKeyUp(const QString &keyStroke);
+  void sendProbeKeyRepeat(const QString &keyStroke, int32_t repeatCount);
 
   // getters
   Settings::CoreMode mode() const

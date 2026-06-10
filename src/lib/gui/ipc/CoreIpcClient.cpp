@@ -25,6 +25,22 @@ void CoreIpcClient::sendStop()
   sendMessage(QStringLiteral("stop"));
 }
 
+void CoreIpcClient::sendProbeKeyDown(const QString &keyStroke)
+{
+  sendMessage(QStringLiteral("probeKeyDown=%1").arg(keyStroke));
+}
+
+void CoreIpcClient::sendProbeKeyUp(const QString &keyStroke)
+{
+  sendMessage(QStringLiteral("probeKeyUp=%1").arg(keyStroke));
+}
+
+void CoreIpcClient::sendProbeKeyRepeat(const QString &keyStroke, int32_t repeatCount)
+{
+  const auto count = (repeatCount > 0) ? repeatCount : 1;
+  sendMessage(QStringLiteral("probeKeyRepeat=%1|%2").arg(keyStroke, QString::number(count)));
+}
+
 void CoreIpcClient::processCommand(const QString &command, const QStringList &parts)
 {
   const auto args = parts.size() >= 2 ? parts.at(1) : QString();

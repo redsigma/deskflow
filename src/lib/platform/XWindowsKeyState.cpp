@@ -271,36 +271,46 @@ std::map<KeyCode, unsigned int> XWindowsKeyState::getModifierButtonsForRelease(b
   return {};
 }
 
-void XWindowsKeyState::releaseNonToggleModifiers() const
+uint32_t XWindowsKeyState::releaseNonToggleModifiers() const
 {
   bool usingLastGoodSource = false;
   const auto modifierButtons = getModifierButtonsForRelease(usingLastGoodSource);
-  if (modifierButtons.empty()) {
-    LOG_DEBUG("cannot release non-toggle X11 modifiers: no current or last-good modifier map available");
-    return;
-  }
-
   std::set<int> keycodesToRelease;
-  int toggleFilteredCount = 0;
-  int unknownModifierCount = 0;
-  for (const auto &[keycode, modifierIndex] : modifierButtons) {
-    const auto modifierBit = getModifierBitForKeycode(keycode);
-    if (modifierBit == kKeyModifierBitNone) {
-      ++unknownModifierCount;
-      LOG_DEBUG2("x11 modifier keycode %d has unknown modifier classification (mod index %u)", keycode, modifierIndex);
-    } else if (!shouldReleaseModifierBit(modifierBit)) {
-      ++toggleFilteredCount;
-      continue;
+
+  if (!modifierButtons.empty()) {
+    int toggleFilteredCount = 0;
+    int unknownModifierCount = 0;
+    for (const auto &[keycode, modifierIndex] : modifierButtons) {
+      const auto modifierBit = getModifierBitForKeycode(keycode);
+      if (modifierBit == kKeyModifierBitNone) {
+        ++unknownModifierCount;
+        LOG_DEBUG("x11 modifier keycode %d has unknown modifier classification (mod index %u)", keycode, modifierIndex);
+      } else if (!shouldReleaseModifierBit(modifierBit)) {
+        ++toggleFilteredCount;
+        continue;
+      }
+
+      keycodesToRelease.insert(keycode);
     }
 
-    keycodesToRelease.insert(keycode);
+    LOG_DEBUG(
+        "releasing non-toggle X11 modifiers from %s map: candidates=%d filtered-toggles=%d unknown=%d releasing=%d",
+        usingLastGoodSource ? "last-good" : "current", static_cast<int>(modifierButtons.size()), toggleFilteredCount,
+        unknownModifierCount, static_cast<int>(keycodesToRelease.size())
+    );
+  } else {
+    KeyButtonSet trackedModifierButtons;
+    getActiveModifierButtons(trackedModifierButtons, false);
+    keycodesToRelease.insert(trackedModifierButtons.begin(), trackedModifierButtons.end());
+    LOG_DEBUG(
+        "x11 modifier map unavailable; falling back to tracked active non-toggle modifiers: releasing=%d",
+        static_cast<int>(keycodesToRelease.size())
+    );
   }
 
-  LOG_DEBUG(
-      "releasing non-toggle X11 modifiers from %s map: candidates=%d filtered-toggles=%d unknown=%d releasing=%d",
-      usingLastGoodSource ? "last-good" : "current", static_cast<int>(modifierButtons.size()), toggleFilteredCount,
-      unknownModifierCount, static_cast<int>(keycodesToRelease.size())
-  );
+  if (keycodesToRelease.empty()) {
+    return 0;
+  }
 
   for (const auto keycode : keycodesToRelease) {
     XTestFakeKeyEvent(m_display, keycode, False, CurrentTime);
@@ -309,6 +319,8 @@ void XWindowsKeyState::releaseNonToggleModifiers() const
   if (!keycodesToRelease.empty()) {
     XFlush(m_display);
   }
+
+  return static_cast<uint32_t>(keycodesToRelease.size());
 }
 
 void XWindowsKeyState::getKeyMap(deskflow::KeyMap &keyMap)

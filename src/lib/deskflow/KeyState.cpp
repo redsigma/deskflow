@@ -874,7 +874,7 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
 
 bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton serverID, const std::string &lang)
 {
-  LOG_DEBUG2("fakeKeyRepeat");
+  LOG_DEBUG("fakeKeyRepeat");
   const KeyButton maskedServerID = serverID & kButtonMask;
   if (maskedServerID == 0) {
     LOG_DEBUG("ignored key repeat with no server button mapping id=0x%04x mask=0x%04x", id, mask);
@@ -1022,7 +1022,7 @@ void KeyState::fakeAllKeysUp()
   for (const auto button : trackedModifierButtons) {
     LOG_DEBUG("fakeAllKeysUp tracked modifier local button before clear: 0x%04x", button);
   }
-  LOG_DEBUG1("modifiers after fakeAllKeysUp: 0x%04x", m_mask);
+  LOG_DEBUG("modifiers after fakeAllKeysUp: 0x%04x", m_mask);
 }
 
 bool KeyState::fakeMediaKey(KeyID)
@@ -1033,6 +1033,16 @@ bool KeyState::fakeMediaKey(KeyID)
 bool KeyState::isKeyDown(KeyButton button) const
 {
   return (m_keys[button & kButtonMask] > 0);
+}
+
+void KeyState::getActiveModifierButtons(KeyButtonSet &buttons, bool includeLocked) const
+{
+  buttons.clear();
+  for (const auto &activeModifier : m_activeModifiers) {
+    if (includeLocked || !activeModifier.second.m_lock) {
+      buttons.insert(activeModifier.second.m_button);
+    }
+  }
 }
 
 KeyModifierMask KeyState::getActiveModifiers() const
@@ -1211,4 +1221,3 @@ KeyState::AddActiveModifierContext::AddActiveModifierContext(
 {
   // do nothing
 }
-

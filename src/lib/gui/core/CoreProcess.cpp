@@ -666,4 +666,28 @@ void CoreProcess::retryDaemon()
   m_daemonIpcClient->connectToServer();
 }
 
+void CoreProcess::sendProbeKeyDown(const QString &keyStroke)
+{
+  if (!m_coreIpcClient) {
+    return;
+  }
+  m_coreIpcClient->sendProbeKeyDown(keyStroke);
+}
+
+void CoreProcess::sendProbeKeyUp(const QString &keyStroke)
+{
+  if (!m_coreIpcClient) {
+    return;
+  }
+  m_coreIpcClient->sendProbeKeyUp(keyStroke);
+}
+
+void CoreProcess::sendProbeKeyRepeat(const QString &keyStroke, int32_t repeatCount)
+{
+  if (!m_coreIpcClient) {
+    return;
+  }
+  m_coreIpcClient->sendProbeKeyRepeat(keyStroke, repeatCount);
+}
+
 } // namespace deskflow::gui

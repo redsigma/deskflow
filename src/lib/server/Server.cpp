@@ -1247,6 +1247,23 @@ void Server::handleKeyRepeatEvent(const Event &event)
   onKeyRepeat(info->m_key, info->m_mask, info->m_count, info->m_button, lang);
 }
 
+void Server::injectKeyDown(
+    KeyID id, KeyModifierMask mask, KeyButton button, const std::string &lang, const char *screens
+)
+{
+  onKeyDown(id, mask, button, lang, screens);
+}
+
+void Server::injectKeyUp(KeyID id, KeyModifierMask mask, KeyButton button, const char *screens)
+{
+  onKeyUp(id, mask, button, screens);
+}
+
+void Server::injectKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &lang)
+{
+  onKeyRepeat(id, mask, count, button, lang);
+}
+
 void Server::handleButtonDownEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformScreen::ButtonInfo *>(event.getData());

@@ -9,6 +9,7 @@
 #include "IpcClient.h"
 
 #include <QObject>
+#include <cstdint>
 
 namespace deskflow::gui::ipc {
 
@@ -20,6 +21,9 @@ public:
   explicit CoreIpcClient(QObject *parent = nullptr);
 
   void sendStop();
+  void sendProbeKeyDown(const QString &keyStroke);
+  void sendProbeKeyUp(const QString &keyStroke);
+  void sendProbeKeyRepeat(const QString &keyStroke, int32_t repeatCount);
 
 Q_SIGNALS:
   void commandReceived(const QString &command, const QString &args);

@@ -27,6 +27,7 @@
 class QAction;
 class QMenu;
 class QLocalServer;
+class KeyboardProbeDialog;
 
 class DeskflowApplication;
 class LogDock;
@@ -131,6 +132,7 @@ private:
   void showConfigureClient();
   void restoreWindow();
   void setupControls();
+  void openKeyboardProbeWindow();
   void showFirstConnectedMessage();
   void updateStatus();
   void showAndActivate();
@@ -181,11 +183,13 @@ private:
 
   LogDock *m_logDock;
   StatusBar *m_statusBar = nullptr;
+  KeyboardProbeDialog *m_keyboardProbeDialog = nullptr;
 
   // Window Menu
   QMenu *m_menuFile = nullptr;
   QMenu *m_menuEdit = nullptr;
   QMenu *m_menuView = nullptr;
+  QMenu *m_menuTools = nullptr;
   QMenu *m_menuHelp = nullptr;
 
   // Window Actions
@@ -200,6 +204,7 @@ private:
   QAction *m_actionStartCore = nullptr;
   QAction *m_actionRestartCore = nullptr;
   QAction *m_actionStopCore = nullptr;
+  QAction *m_actionKeyboardProbe = nullptr;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

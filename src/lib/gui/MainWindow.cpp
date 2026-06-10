@@ -16,6 +16,7 @@
 #include "dialogs/AboutDialog.h"
 #include "dialogs/ClientConfigDialog.h"
 #include "dialogs/FingerprintDialog.h"
+#include "dialogs/KeyboardProbeDialog.h"
 #include "dialogs/ServerConfigDialog.h"
 #include "dialogs/SettingsDialog.h"
 
@@ -67,6 +68,7 @@ MainWindow::MainWindow()
       m_menuFile{new QMenu(this)},
       m_menuEdit{new QMenu(this)},
       m_menuView{new QMenu(this)},
+      m_menuTools{new QMenu(this)},
       m_menuHelp{new QMenu(this)},
       m_actionAbout{new QAction(this)},
       m_actionClearSettings{new QAction(this)},
@@ -79,6 +81,7 @@ MainWindow::MainWindow()
       m_actionStartCore{new QAction(this)},
       m_actionRestartCore{new QAction(this)},
       m_actionStopCore{new QAction(this)},
+      m_actionKeyboardProbe{new QAction(this)},
       m_networkMonitor{new NetworkMonitor(this)}
 {
   ui->setupUi(this);
@@ -123,6 +126,9 @@ MainWindow::MainWindow()
 
   m_actionReportBug->setIcon(QIcon::fromTheme(QStringLiteral("tools-report-bug")));
   m_actionReportBug->setMenuRole(QAction::NoRole);
+
+  m_actionKeyboardProbe->setIcon(QIcon::fromTheme(QStringLiteral("input-keyboard")));
+  m_actionKeyboardProbe->setMenuRole(QAction::NoRole);
 
   // Setup the Instance Checking
   // In case of a previous crash remove first
@@ -263,6 +269,7 @@ void MainWindow::connectSlots()
   connect(m_actionStartCore, &QAction::triggered, this, &MainWindow::startCore);
   connect(m_actionRestartCore, &QAction::triggered, this, &MainWindow::resetCore);
   connect(m_actionStopCore, &QAction::triggered, this, &MainWindow::stopCore);
+  connect(m_actionKeyboardProbe, &QAction::triggered, this, &MainWindow::openKeyboardProbeWindow);
 
   // Mac os tray will only show a menu
   if (!deskflow::platform::isMac())
@@ -481,6 +488,29 @@ void MainWindow::openSettings()
   }
 }
 
+void MainWindow::openKeyboardProbeWindow()
+{
+  if (m_keyboardProbeDialog == nullptr) {
+    m_keyboardProbeDialog = new KeyboardProbeDialog(this);
+    connect(m_keyboardProbeDialog, &KeyboardProbeDialog::probeKeyDown, this, [this](const QString &keyStroke) {
+      m_coreProcess.sendProbeKeyDown(keyStroke);
+    });
+    connect(m_keyboardProbeDialog, &KeyboardProbeDialog::probeKeyUp, this, [this](const QString &keyStroke) {
+      m_coreProcess.sendProbeKeyUp(keyStroke);
+    });
+    connect(
+        m_keyboardProbeDialog, &KeyboardProbeDialog::probeKeyRepeat, this,
+        [this](const QString &keyStroke, int32_t repeatCount) {
+          m_coreProcess.sendProbeKeyRepeat(keyStroke, repeatCount);
+        }
+    );
+    connect(m_keyboardProbeDialog, &QDialog::finished, this, [this] { m_keyboardProbeDialog = nullptr; });
+  }
+  m_keyboardProbeDialog->show();
+  m_keyboardProbeDialog->raise();
+  m_keyboardProbeDialog->activateWindow();
+}
+
 void MainWindow::resetCore()
 {
   m_coreProcess.restart();
@@ -667,6 +697,8 @@ void MainWindow::createMenuBar()
 
   m_menuView->addAction(m_logDock->toggleViewAction());
 
+  m_menuTools->addAction(m_actionKeyboardProbe);
+
   m_menuHelp->addAction(m_actionAbout);
   m_menuHelp->addAction(m_actionReportBug);
   m_menuHelp->addSeparator();
@@ -676,6 +708,7 @@ void MainWindow::createMenuBar()
   menuBar->addMenu(m_menuFile);
   menuBar->addMenu(m_menuEdit);
   menuBar->addMenu(m_menuView);
+  menuBar->addMenu(m_menuTools);
   menuBar->addMenu(m_menuHelp);
 
   setMenuBar(menuBar);
@@ -1043,6 +1076,7 @@ void MainWindow::updateText()
   m_menuFile->setTitle(tr("&File"));
   m_menuEdit->setTitle(tr("&Edit"));
   m_menuView->setTitle(tr("&View"));
+  m_menuTools->setTitle(tr("&Tools"));
   m_menuHelp->setTitle(tr("&Help"));
 
   m_actionClearSettings->setText(tr("Clear settings"));
@@ -1056,6 +1090,7 @@ void MainWindow::updateText()
   m_actionStartCore->setText(tr("&Start"));
   m_actionRestartCore->setText(tr("Rest&art"));
   m_actionStopCore->setText(tr("S&top"));
+  m_actionKeyboardProbe->setText(tr("Keyboard Probe"));
   //: %1 will be the replaced with the appname
   m_actionAbout->setText(tr("About %1...").arg(kAppName));
 

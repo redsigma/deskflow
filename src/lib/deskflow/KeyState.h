@@ -66,6 +66,7 @@ public:
 
   bool isKeyDown(KeyButton) const override;
   KeyModifierMask getActiveModifiers() const override;
+  void getActiveModifierButtons(KeyButtonSet &, bool includeLocked = false) const;
   // Left abstract
   bool fakeCtrlAltDel() override = 0;
   KeyModifierMask pollActiveModifiers() const override = 0;
