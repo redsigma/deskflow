@@ -64,6 +64,8 @@ add_library(${target} STATIC
   dialogs/FingerprintDialog.h
   dialogs/HelpDialog.cpp
   dialogs/HelpDialog.h
+  dialogs/KeyboardProbeDialog.cpp
+  dialogs/KeyboardProbeDialog.h
   dialogs/HotkeyDialog.cpp
   dialogs/HotkeyDialog.h
   dialogs/HotkeyDialog.ui
@@ -138,3 +140,4 @@ if(WIN32)
     net
   )
 endif()
+

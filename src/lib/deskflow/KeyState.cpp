@@ -874,17 +874,16 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
 
 bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton serverID, const std::string &lang)
 {
-  LOG_DEBUG2("fakeKeyRepeat");
+  LOG_DEBUG("fakeKeyRepeat");
   const KeyButton maskedServerID = serverID & kButtonMask;
-  if (maskedServerID == 0) {
-    LOG_DEBUG("ignored key repeat with no server button mapping id=0x%04x mask=0x%04x", id, mask);
-    return false;
-  }
+  KeyButton oldLocalID = 0;
 
   // if we haven't seen this button go down then ignore it
-  KeyButton oldLocalID = m_serverKeys[maskedServerID];
-  if (oldLocalID == 0) {
-    return false;
+  if (maskedServerID != 0) {
+    oldLocalID = m_serverKeys[maskedServerID];
+    if (oldLocalID == 0) {
+      return false;
+    }
   }
 
   // get keys for key repeat
@@ -899,6 +898,17 @@ bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyB
   if (localID == 0) {
     return false;
   }
+  if (maskedServerID == 0) {
+    for (KeyButton trackedServerID = 1; trackedServerID < IKeyState::s_numButtons; ++trackedServerID) {
+      if (m_serverKeys[trackedServerID] == localID) {
+        LOG_DEBUG(
+            "fakeKeyRepeat ignored because local key 0x%04x was last pressed with non-zero server button 0x%04x",
+            localID, trackedServerID
+        );
+        return false;
+      }
+    }
+  }
 
   // if the KeyButton for the auto-repeat is not the same as for the
   // initial press then mark the initial key as released and the new
@@ -906,7 +916,7 @@ bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyB
   // dead key.  for example, a dead accent followed by 'a' will
   // generate an 'a with accent' followed by a repeating 'a'.  the
   // KeyButtons for the two KeyIDs might be different.
-  if (localID != oldLocalID) {
+  if (oldLocalID != 0 && localID != oldLocalID) {
     // replace key up with previous KeyButton but leave key down
     // alone so it uses the new KeyButton.
     for (auto &key : keys) {
@@ -1022,7 +1032,7 @@ void KeyState::fakeAllKeysUp()
   for (const auto button : trackedModifierButtons) {
     LOG_DEBUG("fakeAllKeysUp tracked modifier local button before clear: 0x%04x", button);
   }
-  LOG_DEBUG1("modifiers after fakeAllKeysUp: 0x%04x", m_mask);
+  LOG_DEBUG("modifiers after fakeAllKeysUp: 0x%04x", m_mask);
 }
 
 bool KeyState::fakeMediaKey(KeyID)
@@ -1033,6 +1043,16 @@ bool KeyState::fakeMediaKey(KeyID)
 bool KeyState::isKeyDown(KeyButton button) const
 {
   return (m_keys[button & kButtonMask] > 0);
+}
+
+void KeyState::getActiveModifierButtons(KeyButtonSet &buttons, bool includeLocked) const
+{
+  buttons.clear();
+  for (const auto &activeModifier : m_activeModifiers) {
+    if (includeLocked || !activeModifier.second.m_lock) {
+      buttons.insert(activeModifier.second.m_button);
+    }
+  }
 }
 
 KeyModifierMask KeyState::getActiveModifiers() const
@@ -1211,4 +1231,3 @@ KeyState::AddActiveModifierContext::AddActiveModifierContext(
 {
   // do nothing
 }
-

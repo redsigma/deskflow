@@ -199,6 +199,11 @@ public:
   void getClients(std::vector<std::string> &list) const;
   void sendConnectedClientsIpc() const;
   size_t getMaximumClipboardSizeBytes() const;
+  void injectKeyDown(
+      KeyID id, KeyModifierMask mask, KeyButton button, const std::string &lang, const char *screens = nullptr
+  );
+  void injectKeyUp(KeyID id, KeyModifierMask mask, KeyButton button, const char *screens = nullptr);
+  void injectKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &lang);
 
   //@}
 
@@ -469,3 +474,4 @@ private:
   bool m_disableLockToScreen = false;
   bool m_enableClipboard = true;
 };
+

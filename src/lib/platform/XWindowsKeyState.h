@@ -92,7 +92,7 @@ public:
   KeyModifierMask pollActiveModifiers() const override;
   int32_t pollActiveGroup() const final;
   void pollPressedKeys(KeyButtonSet &pressedKeys) const override;
-  void releaseNonToggleModifiers() const;
+  uint32_t releaseNonToggleModifiers() const;
   static bool shouldReleaseModifierBit(uint32_t modifierBit);
 
 protected:
