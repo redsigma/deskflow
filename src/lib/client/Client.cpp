@@ -20,6 +20,7 @@
 #include "deskflow/PacketStreamFilter.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
+#include "deskflow/DeskflowException.h"
 #include "deskflow/Screen.h"
 #include "deskflow/StreamChunker.h"
 #include "deskflow/ipc/CoreIpc.h"
@@ -30,6 +31,7 @@
 
 #include <QMetaEnum>
 
+#include <exception>
 #include <cstdlib>
 #include <cstring>
 
@@ -210,7 +212,14 @@ void *Client::getEventTarget() const
 
 bool Client::getClipboard(ClipboardID id, IClipboard *clipboard) const
 {
-  return m_screen->getClipboard(id, clipboard);
+  try {
+    return m_screen->getClipboard(id, clipboard);
+  } catch (const BaseException &e) {
+    LOG_ERR("client \"%s\" getClipboard failed: id=%d error=%s", m_name.c_str(), id, e.what());
+  } catch (const std::exception &e) {
+    LOG_ERR("client \"%s\" getClipboard failed: id=%d error=%s", m_name.c_str(), id, e.what());
+  }
+  return false;
 }
 
 void Client::getShape(int32_t &x, int32_t &y, int32_t &w, int32_t &h) const
@@ -263,7 +272,13 @@ bool Client::leave()
 
 void Client::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
-  m_screen->setClipboard(id, clipboard);
+  try {
+    m_screen->setClipboard(id, clipboard);
+  } catch (const BaseException &e) {
+    LOG_ERR("failed to set clipboard on client \"%s\": id=%d error=%s", m_name.c_str(), id, e.what());
+  } catch (const std::exception &e) {
+    LOG_ERR("failed to set clipboard on client \"%s\": id=%d error=%s", m_name.c_str(), id, e.what());
+  }
   m_ownClipboard[id] = false;
   m_sentClipboard[id] = false;
 }
@@ -399,12 +414,34 @@ void Client::sendClipboard(ClipboardID id)
   if (clipboard.open(m_timeClipboard[id])) {
     clipboard.close();
   }
-  m_screen->getClipboard(id, &clipboard);
+  bool gotClipboard = false;
+  try {
+    gotClipboard = m_screen->getClipboard(id, &clipboard);
+  } catch (const BaseException &e) {
+    LOG_ERR("client \"%s\" getClipboard failed while sending clipboard=%d: %s", m_name.c_str(), id, e.what());
+    return;
+  } catch (const std::exception &e) {
+    LOG_ERR("client \"%s\" getClipboard failed while sending clipboard=%d: %s", m_name.c_str(), id, e.what());
+    return;
+  }
+  if (!gotClipboard) {
+    LOG_WARN("client \"%s\" clipboard read returned false for clipboard=%d", m_name.c_str(), id);
+    return;
+  }
 
   // check time
   if (m_timeClipboard[id] == 0 || clipboard.getTime() != m_timeClipboard[id]) {
     // marshall the data
-    std::string data = clipboard.marshall();
+    std::string data;
+    try {
+      data = clipboard.marshall();
+    } catch (const BaseException &e) {
+      LOG_ERR("client \"%s\" failed to marshall clipboard=%d: %s", m_name.c_str(), id, e.what());
+      return;
+    } catch (const std::exception &e) {
+      LOG_ERR("client \"%s\" failed to marshall clipboard=%d: %s", m_name.c_str(), id, e.what());
+      return;
+    }
     if (data.size() >= m_maximumClipboardSize * 1024) {
       LOG_WARN("not sending clipboard data, exceeds limit: %zu KB", m_maximumClipboardSize);
       return;
@@ -416,7 +453,13 @@ void Client::sendClipboard(ClipboardID id)
     if (!m_sentClipboard[id] || data != m_dataClipboard[id]) {
       m_sentClipboard[id] = true;
       m_dataClipboard[id] = data;
-      m_server->onClipboardChanged(id, &clipboard);
+      try {
+        m_server->onClipboardChanged(id, &clipboard);
+      } catch (const BaseException &e) {
+        LOG_ERR("client \"%s\" failed to forward clipboard=%d to server: %s", m_name.c_str(), id, e.what());
+      } catch (const std::exception &e) {
+        LOG_ERR("client \"%s\" failed to forward clipboard=%d to server: %s", m_name.c_str(), id, e.what());
+      }
     }
   }
 }

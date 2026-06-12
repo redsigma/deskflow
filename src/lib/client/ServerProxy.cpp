@@ -410,10 +410,25 @@ bool ServerProxy::onGrabClipboard(ClipboardID id)
 
 void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard)
 {
-  std::string data = IClipboard::marshall(clipboard);
+  std::string data;
+  try {
+    data = IClipboard::marshall(clipboard);
+  } catch (const BaseException &e) {
+    LOG_ERR("failed to marshall clipboard %d before sending to server: %s", id, e.what());
+    return;
+  } catch (const std::exception &e) {
+    LOG_ERR("failed to marshall clipboard %d before sending to server: %s", id, e.what());
+    return;
+  }
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
 
-  StreamChunker::sendClipboard(data, data.size(), id, m_seqNum, m_events, this);
+  try {
+    StreamChunker::sendClipboard(data, data.size(), id, m_seqNum, m_events, this);
+  } catch (const BaseException &e) {
+    LOG_ERR("failed to send clipboard %d to server: %s", id, e.what());
+  } catch (const std::exception &e) {
+    LOG_ERR("failed to send clipboard %d to server: %s", id, e.what());
+  }
 }
 
 void ServerProxy::flushCompressedMouse()
@@ -594,10 +609,18 @@ void ServerProxy::setClipboard()
 
     // forward
     Clipboard clipboard;
-    clipboard.unmarshall(m_clipboardDataCached, 0);
-    m_client->setClipboard(id, &clipboard);
-    m_clipboardDataCached.clear();
-    m_clipboardDataCached.shrink_to_fit();
+    try {
+      clipboard.unmarshall(m_clipboardDataCached, 0);
+      m_client->setClipboard(id, &clipboard);
+      m_clipboardDataCached.clear();
+      m_clipboardDataCached.shrink_to_fit();
+    } catch (const BaseException &e) {
+      LOG_ERR("failed to receive clipboard %d: %s", id, e.what());
+      return;
+    } catch (const std::exception &e) {
+      LOG_ERR("failed to receive clipboard %d: %s", id, e.what());
+      return;
+    }
 
     LOG_INFO("clipboard was updated");
   } else if (r == TransferState::Error) {

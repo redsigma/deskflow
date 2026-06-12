@@ -8,6 +8,7 @@
 
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/DeskflowException.h"
 #include "deskflow/ProtocolUtil.h"
 #include "deskflow/StreamChunker.h"
 #include "io/IStream.h"
@@ -35,16 +36,20 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
   // ignore if this clipboard is already clean
   if (m_clipboard[id].m_dirty) {
-    // this clipboard is now clean
-    m_clipboard[id].m_dirty = false;
-    Clipboard::copy(&m_clipboard[id].m_clipboard, clipboard);
+    try {
+      Clipboard::copy(&m_clipboard[id].m_clipboard, clipboard);
+      std::string data = m_clipboard[id].m_clipboard.marshall();
+      size_t size = data.size();
+      LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
 
-    std::string data = m_clipboard[id].m_clipboard.marshall();
-
-    size_t size = data.size();
-    LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
-
-    StreamChunker::sendClipboard(data, size, id, 0, m_events, this);
+      StreamChunker::sendClipboard(data, size, id, 0, m_events, this);
+      // this clipboard is now clean
+      m_clipboard[id].m_dirty = false;
+    } catch (const BaseException &e) {
+      LOG_ERR("failed to send clipboard %d to \"%s\": %s", id, getName().c_str(), e.what());
+    } catch (const std::exception &e) {
+      LOG_ERR("failed to send clipboard %d to \"%s\": %s", id, getName().c_str(), e.what());
+    }
   }
 }
 
@@ -67,10 +72,18 @@ bool ClientProxy1_6::recvClipboard()
          m_clipboardDataCached.size())
     );
     // save clipboard
-    m_clipboard[id].m_clipboard.unmarshall(m_clipboardDataCached, 0);
-    m_clipboard[id].m_sequenceNumber = seq;
-    m_clipboardDataCached.clear();
-    m_clipboardDataCached.shrink_to_fit();
+    try {
+      m_clipboard[id].m_clipboard.unmarshall(dataCached, 0);
+      m_clipboard[id].m_sequenceNumber = seq;
+      m_clipboardDataCached.clear();
+      m_clipboardDataCached.shrink_to_fit();
+    } catch (const BaseException &e) {
+      LOG_ERR("failed to receive clipboard %d from \"%s\": %s", id, getName().c_str(), e.what());
+      return;
+    } catch (const std::exception &e) {
+      LOG_ERR("failed to receive clipboard %d from \"%s\": %s", id, getName().c_str(), e.what());
+      return;
+    }
 
     // notify
     auto *info = new ClipboardInfo;

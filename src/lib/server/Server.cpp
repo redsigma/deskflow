@@ -30,6 +30,7 @@
 #include <array>
 #endif
 #include <cmath>
+#include <exception>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -63,7 +64,15 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Scr
       clipboard.m_clipboard.empty();
       clipboard.m_clipboard.close();
     }
-    clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+    try {
+      clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+    } catch (const BaseException &e) {
+      LOG_ERR("failed to initialize clipboard marshall: client=\"%s\" error=%s", primaryName.c_str(), e.what());
+      clipboard.m_clipboardData.clear();
+    } catch (const std::exception &e) {
+      LOG_ERR("failed to initialize clipboard marshall: client=\"%s\" error=%s", primaryName.c_str(), e.what());
+      clipboard.m_clipboardData.clear();
+    }
   }
 
   // install event handlers
@@ -470,6 +479,7 @@ void Server::switchScreen(BaseClientProxy *dst, int32_t x, int32_t y, bool forSc
 #endif
 
     // cut over
+    const std::string from = getName(m_active);
     m_active = dst;
 
     // increment enter sequence number
@@ -481,11 +491,43 @@ void Server::switchScreen(BaseClientProxy *dst, int32_t x, int32_t y, bool forSc
     if (m_enableClipboard) {
       // send the clipboard data to new active screen
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
-        // Hackity hackity hack
-        if (m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
+        std::string data;
+        try {
+          data = m_clipboards[id].m_clipboard.marshall();
+        } catch (const BaseException &e) {
+          LOG_ERR(
+              "failed to marshall clipboard during screen switch: screen=\"%s\" clipboard=%d error=%s",
+              getName(dst).c_str(), id, e.what()
+          );
+          continue;
+        } catch (const std::exception &e) {
+          LOG_ERR(
+              "failed to marshall clipboard during screen switch: screen=\"%s\" clipboard=%d error=%s",
+              getName(dst).c_str(), id, e.what()
+          );
           continue;
         }
-        m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
+
+        if (data.size() > (m_maximumClipboardSize * 1024)) {
+          continue;
+        }
+
+        // Hackity hackity hack
+        try {
+          m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
+        } catch (const BaseException &e) {
+          LOG_ERR(
+              "failed to set clipboard during screen switch: from=\"%s\" to=\"%s\" clipboard=%d error=%s",
+              from.c_str(), getName(m_active).c_str(), id, e.what()
+          );
+          continue;
+        } catch (const std::exception &e) {
+          LOG_ERR(
+              "failed to set clipboard during screen switch: from=\"%s\" to=\"%s\" clipboard=%d error=%s",
+              from.c_str(), getName(m_active).c_str(), id, e.what()
+          );
+          continue;
+        }
       }
     }
 
@@ -1180,7 +1222,21 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
     clipboard.m_clipboard.empty();
     clipboard.m_clipboard.close();
   }
-  clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+  try {
+    clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+  } catch (const BaseException &e) {
+    LOG_ERR(
+        "failed to refresh clipboard data after grab: screen=\"%s\" clipboard=%d error=%s", getName(grabber).c_str(),
+        info->m_id, e.what()
+    );
+    return;
+  } catch (const std::exception &e) {
+    LOG_ERR(
+        "failed to refresh clipboard data after grab: screen=\"%s\" clipboard=%d error=%s", getName(grabber).c_str(),
+        info->m_id, e.what()
+    );
+    return;
+  }
 
   // tell all other screens to take ownership of clipboard.  tell the
   // grabber that it's clipboard isn't dirty.
@@ -1531,10 +1587,43 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     );
   }
 
-  // get data
-  sender->getClipboard(id, &clipboard.m_clipboard);
+  bool acquired = false;
+  try {
+    acquired = sender->getClipboard(id, &clipboard.m_clipboard);
+  } catch (const BaseException &e) {
+    LOG_ERR(
+        "failed to read clipboard from sender during update: sender=\"%s\"(%p) clipboard=%d error=%s",
+        getName(sender).c_str(), sender, id, e.what()
+    );
+    return;
+  } catch (const std::exception &e) {
+    LOG_ERR(
+        "failed to read clipboard from sender during update: sender=\"%s\"(%p) clipboard=%d error=%s",
+        getName(sender).c_str(), sender, id, e.what()
+    );
+    return;
+  }
+  if (!acquired) {
+    LOG_WARN("failed to read clipboard from sender: sender=\"%s\"(%p) clipboard=%d", getName(sender).c_str(), sender, id);
+    return;
+  }
 
-  std::string data = clipboard.m_clipboard.marshall();
+  std::string data;
+  try {
+    data = clipboard.m_clipboard.marshall();
+  } catch (const BaseException &e) {
+    LOG_ERR(
+        "failed to serialize clipboard during update: sender=\"%s\"(%p) clipboard=%d error=%s", getName(sender).c_str(),
+        sender, id, e.what()
+    );
+    return;
+  } catch (const std::exception &e) {
+    LOG_ERR(
+        "failed to serialize clipboard during update: sender=\"%s\"(%p) clipboard=%d error=%s", getName(sender).c_str(),
+        sender, id, e.what()
+    );
+    return;
+  }
   if (data.size() > m_maximumClipboardSize * 1024) {
     LOG_WARN("not sending clipboard data, exceeds limit: %i KB", m_maximumClipboardSize);
     return;
@@ -1562,7 +1651,19 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     return;
   }
 
-  m_active->setClipboard(id, &clipboard.m_clipboard);
+  try {
+    m_active->setClipboard(id, &clipboard.m_clipboard);
+  } catch (const BaseException &e) {
+    LOG_ERR(
+        "failed to set active clipboard: active=\"%s\"(%p) clipboard=%d error=%s", getName(m_active).c_str(), m_active,
+        id, e.what()
+    );
+  } catch (const std::exception &e) {
+    LOG_ERR(
+        "failed to set active clipboard: active=\"%s\"(%p) clipboard=%d error=%s", getName(m_active).c_str(), m_active,
+        id, e.what()
+    );
+  }
 }
 
 void Server::onScreensaver(bool activated)
