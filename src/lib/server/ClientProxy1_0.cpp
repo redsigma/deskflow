@@ -53,13 +53,20 @@ ClientProxy1_0::~ClientProxy1_0()
 
 void ClientProxy1_0::disconnect()
 {
+  LOG_DEBUG(
+      "client proxy disconnect begin: client=\"%s\"(%p) parser=%s heartbeatAlarm=%.2f timer=%p", getName().c_str(),
+      this, (m_parser == &ClientProxy1_0::parseHandshakeMessage ? "handshake" : "message"), m_heartbeatAlarm,
+      m_heartbeatTimer
+  );
   removeHandlers();
   getStream()->close();
   m_events->addEvent(Event(EventTypes::ClientProxyDisconnected, getEventTarget()));
+  LOG_DEBUG("client proxy disconnect queued ClientProxyDisconnected: client=\"%s\"(%p)", getName().c_str(), this);
 }
 
 void ClientProxy1_0::removeHandlers()
 {
+  LOG_DEBUG("client proxy removeHandlers: client=\"%s\"(%p)", getName().c_str(), this);
   using enum EventTypes;
   // uninstall event handlers
   m_events->removeHandler(StreamInputReady, getStream()->getEventTarget());
@@ -185,20 +192,20 @@ bool ClientProxy1_0::parseMessage(const uint8_t *code)
 
 void ClientProxy1_0::handleDisconnect()
 {
-  LOG_DEBUG("client \"%s\" has disconnected", getName().c_str());
+  LOG_DEBUG("client \"%s\"(%p) disconnect event", getName().c_str(), this);
   disconnect();
 }
 
 void ClientProxy1_0::handleWriteError()
 {
-  LOG_WARN("error writing to client \"%s\"", getName().c_str());
+  LOG_WARN("write error for client \"%s\"(%p)", getName().c_str(), this);
   disconnect();
 }
 
 void ClientProxy1_0::handleFlatline()
 {
   // didn't get a heartbeat fast enough.  assume client is dead.
-  LOG_DEBUG("client \"%s\" is dead", getName().c_str());
+  LOG_WARN("flatline detected for client \"%s\"(%p)", getName().c_str(), this);
   disconnect();
 }
 

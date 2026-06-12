@@ -1291,15 +1291,47 @@ void Server::handleSwitchWaitTimeout()
 
 void Server::handleClientDisconnected(BaseClientProxy *client)
 {
+  const auto clientName = getName(client);
+  LOG_INFO(
+      "server client disconnect begin: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) "
+      "switchScreen=\"%s\"(%p) "
+      "clients=%zu oldClients=%zu",
+      clientName.c_str(), client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver,
+      (m_switchScreen != nullptr ? getName(m_switchScreen).c_str() : "<null>"), m_switchScreen, m_clients.size(),
+      m_oldClients.size()
+  );
+
+  const bool disconnectWasActive = (client == m_active);
   // client has disconnected.  it might be an old client or an
   // active client.  we don't care so just handle it both ways.
   removeActiveClient(client);
   removeOldClient(client);
 
+  if (disconnectWasActive && m_active != m_primaryClient) {
+    LOG_WARN(
+        "active-client disconnect invariant violation: client \"%s\" was active but active did not return to primary",
+        clientName.c_str()
+    );
+    forceLeaveClient(client);
+  }
+
+  if (m_activeSaver == client) {
+    LOG_DEBUG("disconnect cleared activeSaver marker for client \"%s\"", clientName.c_str());
+  }
+
   // m_clients always contains the primary (server) screen, so 1 means no remote clients.
   using enum deskflow::core::ConnectionState;
   ipcSendConnectionState(m_clients.size() <= 1 ? Listening : Connected);
   sendConnectedClientsIpc();
+
+  LOG_INFO(
+      "server client disconnect end: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) "
+      "switchScreen=\"%s\"(%p) "
+      "clients=%zu oldClients=%zu",
+      clientName.c_str(), client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver,
+      (m_switchScreen != nullptr ? getName(m_switchScreen).c_str() : "<null>"), m_switchScreen, m_clients.size(),
+      m_oldClients.size()
+  );
 
   delete client;
 }
@@ -1307,8 +1339,35 @@ void Server::handleClientDisconnected(BaseClientProxy *client)
 void Server::handleClientCloseTimeout(BaseClientProxy *client)
 {
   // client took too long to disconnect.  just dump it.
-  LOG_INFO("forced disconnection of client \"%s\"", getName(client).c_str());
+  const auto clientName = getName(client);
+  const bool timeoutWasActive = (client == m_active);
+  LOG_INFO(
+      "forced disconnection timeout begin: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) "
+      "switchScreen=\"%s\"(%p) "
+      "clients=%zu oldClients=%zu",
+      clientName.c_str(), client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver,
+      (m_switchScreen != nullptr ? getName(m_switchScreen).c_str() : "<null>"), m_switchScreen, m_clients.size(),
+      m_oldClients.size()
+  );
   removeOldClient(client);
+
+  if (timeoutWasActive && m_active != m_primaryClient) {
+    LOG_WARN(
+        "active-client close-timeout invariant violation: client \"%s\" was active but active did not return to "
+        "primary",
+        clientName.c_str()
+    );
+    forceLeaveClient(client);
+  }
+
+  LOG_INFO(
+      "forced disconnection timeout end: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) "
+      "switchScreen=\"%s\"(%p) "
+      "clients=%zu oldClients=%zu",
+      clientName.c_str(), client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver,
+      (m_switchScreen != nullptr ? getName(m_switchScreen).c_str() : "<null>"), m_switchScreen, m_clients.size(),
+      m_oldClients.size()
+  );
 
   delete client;
 }
@@ -2003,17 +2062,57 @@ void Server::closeClients(const ServerConfig &config)
 
 void Server::removeActiveClient(BaseClientProxy *client)
 {
+  const auto clientName = getName(client);
+  LOG_DEBUG(
+      "removeActiveClient begin: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) clients=%zu oldClients=%zu",
+      clientName.c_str(), client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver,
+      m_clients.size(), m_oldClients.size()
+  );
+
   if (removeClient(client)) {
     forceLeaveClient(client);
     m_events->removeHandler(EventTypes::ClientProxyDisconnected, client);
     if (m_clients.size() == 1 && m_oldClients.empty()) {
       m_events->addEvent(Event(EventTypes::ServerDisconnected, this));
     }
+    LOG_DEBUG(
+        "removeActiveClient end: client=\"%s\"(%p) active=\"%s\"(%p) clients=%zu oldClients=%zu", clientName.c_str(),
+        client, getName(m_active).c_str(), m_active, m_clients.size(), m_oldClients.size()
+    );
+    return;
   }
+
+  // removeClient can fail if this client was already moved into the close path.
+  if (m_active == client) {
+    LOG_WARN(
+        "removeActiveClient could not remove active client from active list, forcing leave: \"%s\"(%p)",
+        clientName.c_str(), client
+    );
+    forceLeaveClient(client);
+  }
+
+  if (m_activeSaver == client) {
+    LOG_DEBUG("removeActiveClient stale activeSaver marker for client \"%s\"", clientName.c_str());
+    m_activeSaver = nullptr;
+    m_primaryClient->reconfigure(getActivePrimarySides());
+  }
+
+  LOG_DEBUG(
+      "removeActiveClient skipped: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) clients=%zu "
+      "oldClients=%zu",
+      clientName.c_str(), client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver,
+      m_clients.size(), m_oldClients.size()
+  );
 }
 
 void Server::removeOldClient(BaseClientProxy *client)
 {
+  const auto clientName = getName(client);
+  LOG_DEBUG(
+      "removeOldClient begin: client=\"%s\"(%p) clients=%zu oldClients=%zu", clientName.c_str(), client,
+      m_clients.size(), m_oldClients.size()
+  );
+
   using enum EventTypes;
   OldClients::iterator i = m_oldClients.find(client);
   if (i != m_oldClients.end()) {
@@ -2024,11 +2123,23 @@ void Server::removeOldClient(BaseClientProxy *client)
     if (m_clients.size() == 1 && m_oldClients.empty()) {
       m_events->addEvent(Event(ServerDisconnected, this));
     }
+    LOG_DEBUG(
+        "removeOldClient complete: client=\"%s\"(%p) clients=%zu oldClients=%zu", clientName.c_str(), client,
+        m_clients.size(), m_oldClients.size()
+    );
+    return;
   }
+
+  LOG_DEBUG("removeOldClient miss: client=\"%s\"(%p)", clientName.c_str(), client);
 }
 
 void Server::forceLeaveClient(const BaseClientProxy *client)
 {
+  LOG_DEBUG(
+      "forceLeaveClient check: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p)", getName(client).c_str(),
+      client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver
+  );
+
   if (const auto *active = (m_activeSaver != nullptr) ? m_activeSaver : m_active; active == client) {
     // record new position (center of primary screen)
     m_primaryClient->getCursorCenter(m_x, m_y);
@@ -2052,6 +2163,11 @@ void Server::forceLeaveClient(const BaseClientProxy *client)
     // screen saver)
     if (m_activeSaver == nullptr) {
       m_primaryClient->enter(m_x, m_y, m_seqNum, m_primaryClient->getToggleMask(), false);
+      LOG_DEBUG("forceLeaveClient entered primary for client \"%s\"(%p)", getName(client).c_str(), client);
+    } else {
+      LOG_DEBUG(
+          "forceLeaveClient deferred primary enter due activeSaver; client=\"%s\"(%p)", getName(client).c_str(), client
+      );
     }
   }
 
@@ -2060,8 +2176,14 @@ void Server::forceLeaveClient(const BaseClientProxy *client)
   // deactivates.
   if (m_activeSaver == client) {
     m_activeSaver = nullptr;
+    LOG_DEBUG("forceLeaveClient cleared activeSaver \"%s\"(%p)", getName(client).c_str(), client);
   }
 
   // tell primary client about the active sides
   m_primaryClient->reconfigure(getActivePrimarySides());
+
+  LOG_DEBUG(
+      "forceLeaveClient end: forcedBy=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p)", getName(client).c_str(),
+      client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver
+  );
 }

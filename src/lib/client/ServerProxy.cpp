@@ -82,6 +82,12 @@ ServerProxy::~ServerProxy()
 
 void ServerProxy::resetKeepAliveAlarm()
 {
+  const auto clientName = m_client != nullptr ? m_client->getName() : std::string("<null>");
+  LOG_DEBUG(
+      "keep-alive alarm reset begin: client=\"%s\" keepAliveAlarm=%.2f timer=%p", clientName.c_str(), m_keepAliveAlarm,
+      m_keepAliveAlarmTimer
+  );
+
   if (m_keepAliveAlarmTimer != nullptr) {
     m_events->removeHandler(EventTypes::Timer, m_keepAliveAlarmTimer);
     m_events->deleteTimer(m_keepAliveAlarmTimer);
@@ -91,6 +97,8 @@ void ServerProxy::resetKeepAliveAlarm()
     m_keepAliveAlarmTimer = m_events->newOneShotTimer(m_keepAliveAlarm, nullptr);
     m_events->addHandler(EventTypes::Timer, m_keepAliveAlarmTimer, [this](const auto &) { handleKeepAliveAlarm(); });
   }
+
+  LOG_DEBUG("keep-alive alarm reset end: client=\"%s\" timer=%p", clientName.c_str(), m_keepAliveAlarmTimer);
 }
 
 void ServerProxy::setKeepAliveRate(double rate)
@@ -180,6 +188,8 @@ ServerProxy::ConnectionResult ServerProxy::parseHandshakeMessage(const uint8_t *
     // echo keep alives and reset alarm
     ProtocolUtil::writef(m_stream, kMsgCKeepAlive);
     resetKeepAliveAlarm();
+    const auto clientName = m_client != nullptr ? m_client->getName() : std::string("<null>");
+    LOG_DEBUG("received keep-alive from server during handshake: client=\"%s\"", clientName.c_str());
   }
 
   else if (memcmp(code, kMsgCNoop, 4) == 0) {
@@ -203,13 +213,15 @@ ServerProxy::ConnectionResult ServerProxy::parseHandshakeMessage(const uint8_t *
   }
 
   else if (memcmp(code, kMsgEBusy, 4) == 0) {
-    LOG_ERR("server already has a connected client with name \"%s\"", m_client->getName().c_str());
+    const auto clientName = m_client != nullptr ? m_client->getName() : std::string("<null>");
+    LOG_ERR("server already has a connected client with name \"%s\"", clientName.c_str());
     requestRefuseConnection(AlreadyConnected, "server already has a connected client with our name");
     return Disconnect;
   }
 
   else if (memcmp(code, kMsgEUnknown, 4) == 0) {
-    LOG_ERR("server refused client with name \"%s\"", m_client->getName().c_str());
+    const auto clientName = m_client != nullptr ? m_client->getName() : std::string("<null>");
+    LOG_ERR("server refused client with name \"%s\"", clientName.c_str());
     requestRefuseConnection(UnknownClient, "server refused client with our name");
     return Disconnect;
   }
@@ -285,6 +297,8 @@ ServerProxy::ConnectionResult ServerProxy::parseMessage(const uint8_t *code)
     // echo keep alives and reset alarm
     ProtocolUtil::writef(m_stream, kMsgCKeepAlive);
     resetKeepAliveAlarm();
+    const auto clientName = m_client != nullptr ? m_client->getName() : std::string("<null>");
+    LOG_DEBUG("received keep-alive from server: client=\"%s\"", clientName.c_str());
   }
 
   else if (memcmp(code, kMsgCNoop, 4) == 0) {

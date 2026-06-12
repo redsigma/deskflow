@@ -143,6 +143,10 @@ void Client::connect(size_t addressIndex)
 
 void Client::disconnect(const char *msg)
 {
+  LOG_INFO(
+      "client disconnect begin: name=\"%s\"(%p) ready=%d active=%d server=%p stream=%p msg=%s", m_name.c_str(), this,
+      m_ready, m_active, m_server, m_stream, (msg != nullptr ? msg : "<null>")
+  );
   cleanup();
 
   if (msg) {
@@ -150,6 +154,8 @@ void Client::disconnect(const char *msg)
   } else {
     sendEvent(EventTypes::ClientDisconnected);
   }
+
+  LOG_DEBUG("client disconnect end: name=\"%s\"(%p) ready=%d active=%d", m_name.c_str(), this, m_ready, m_active);
 }
 
 void Client::refuseConnection(deskflow::core::ConnectionRefusal reason, const char *msg)
@@ -231,11 +237,16 @@ void Client::enter(int32_t xAbs, int32_t yAbs, uint32_t, KeyModifierMask mask, b
 
 bool Client::leave()
 {
+  LOG_INFO(
+      "client leave begin: name=\"%s\"(%p) active=%d relativeMouseMoves=%d", m_name.c_str(), this, m_active,
+      m_relativeMouseMoves
+  );
   if (m_relativeMouseMoves) {
     saveRelativeRestorePosition();
   }
   m_active = false;
 
+  LOG_DEBUG("client leave executing m_screen->leave: name=\"%s\"(%p)", m_name.c_str(), this);
   m_screen->leave();
 
   if (m_enableClipboard) {
@@ -520,16 +531,27 @@ void Client::cleanupConnection()
 
 void Client::cleanupScreen()
 {
+  LOG_DEBUG(
+      "cleanupScreen begin: client=\"%s\"(%p) ready=%d server=%p stream=%p", m_name.c_str(), this, m_ready, m_server,
+      m_stream
+  );
   if (m_server != nullptr) {
     if (m_ready) {
+      LOG_DEBUG("cleanupScreen executed m_screen->disable: client=\"%s\"(%p)", m_name.c_str(), this);
       m_screen->disable();
       m_ready = false;
+    } else {
+      LOG_DEBUG(
+          "cleanupScreen skipped m_screen->disable because m_ready=false: client=\"%s\"(%p)", m_name.c_str(), this
+      );
     }
     m_events->removeHandler(EventTypes::ScreenShapeChanged, getEventTarget());
     m_events->removeHandler(EventTypes::ClipboardGrabbed, getEventTarget());
     delete m_server;
     m_server = nullptr;
   }
+
+  LOG_DEBUG("cleanupScreen end: client=\"%s\"(%p) ready=%d", m_name.c_str(), this, m_ready);
 }
 
 void Client::cleanupTimer()
@@ -585,19 +607,21 @@ void Client::handleConnectTimeout()
 
 void Client::handleOutputError()
 {
+  LOG_WARN("client output error: name=\"%s\"(%p) server=%p stream=%p", m_name.c_str(), this, m_server, m_stream);
   cleanupTimer();
   cleanupScreen();
   cleanupConnection();
-  LOG_WARN("error sending to server");
+  LOG_WARN("error sending to server: name=\"%s\"(%p)", m_name.c_str(), this);
   sendEvent(EventTypes::ClientDisconnected);
 }
 
 void Client::handleDisconnected()
 {
+  LOG_VERBOSE("client disconnected: name=\"%s\"(%p) server=%p stream=%p", m_name.c_str(), this, m_server, m_stream);
   cleanupTimer();
   cleanupScreen();
   cleanupConnection();
-  LOG_VERBOSE("disconnected");
+  LOG_VERBOSE("disconnected complete: name=\"%s\"(%p)", m_name.c_str(), this);
   sendEvent(EventTypes::ClientDisconnected);
 }
 
