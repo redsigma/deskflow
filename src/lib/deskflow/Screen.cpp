@@ -165,8 +165,12 @@ bool Screen::leave()
     LOG_WARN("screen already left");
   }
 
-  if (!m_screen->canLeave()) {
+  const bool canLeave = m_screen->canLeave();
+  if (m_isPrimary && !canLeave) {
     return false;
+  }
+  if (!m_isPrimary && !canLeave) {
+    LOG_WARN("can't verify secondary screen leave request; attempting best-effort release");
   }
 
   if (m_isPrimary) {
