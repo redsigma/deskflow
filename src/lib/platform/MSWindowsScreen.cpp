@@ -31,6 +31,7 @@
 #include <Shlobj.h>
 #include <algorithm>
 #include <comutil.h>
+#include <exception>
 #include <string.h>
 
 // suppress warning about GetVersionEx, which is used indirectly in this
@@ -318,19 +319,26 @@ void MSWindowsScreen::leave()
 
 bool MSWindowsScreen::setClipboard(ClipboardID, const IClipboard *src)
 {
-  MSWindowsClipboard dst(m_window);
-  if (src != nullptr) {
-    // save clipboard data
-    return Clipboard::copy(&dst, src);
-  } else {
-    // assert clipboard ownership
-    if (!dst.open(0)) {
-      return false;
+  try {
+    MSWindowsClipboard dst(m_window);
+    if (src != nullptr) {
+      // save clipboard data
+      return Clipboard::copy(&dst, src);
+    } else {
+      // assert clipboard ownership
+      if (!dst.open(0)) {
+        return false;
+      }
+      dst.empty();
+      dst.close();
+      return true;
     }
-    dst.empty();
-    dst.close();
-    return true;
+  } catch (const std::exception &e) {
+    LOG_WARN("Windows setClipboard failed: %s", e.what());
+  } catch (...) {
+    LOG_WARN("Windows setClipboard failed: unknown error");
   }
+  return false;
 }
 
 void MSWindowsScreen::checkClipboards()
@@ -418,9 +426,16 @@ void *MSWindowsScreen::getEventTarget() const
 
 bool MSWindowsScreen::getClipboard(ClipboardID, IClipboard *dst) const
 {
-  MSWindowsClipboard src(m_window);
-  Clipboard::copy(dst, &src);
-  return true;
+  try {
+    MSWindowsClipboard src(m_window);
+    Clipboard::copy(dst, &src);
+    return true;
+  } catch (const std::exception &e) {
+    LOG_WARN("Windows getClipboard failed: %s", e.what());
+  } catch (...) {
+    LOG_WARN("Windows getClipboard failed: unknown error");
+  }
+  return false;
 }
 
 void MSWindowsScreen::getShape(int32_t &x, int32_t &y, int32_t &w, int32_t &h) const

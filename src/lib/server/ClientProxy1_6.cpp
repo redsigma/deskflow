@@ -58,14 +58,13 @@ bool ClientProxy1_6::recvClipboard()
   // parse message
   ClipboardID id;
   uint32_t seq;
-
-  auto r = ClipboardChunk::assemble(
+  const auto r = ClipboardChunk::assemble(
       getStream(), m_clipboardDataCached, id, seq, m_clipboardChunkState, m_server->getMaximumClipboardSizeBytes()
   );
 
   if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize(m_clipboardChunkState);
-    LOG_DEBUG("receiving clipboard %d size=%zu", id, size);
+    LOG_DEBUG("receiving clipboard %d size=%d", id, size);
   } else if (r == TransferState::Finished) {
     LOG(
         (CLOG_DEBUG "received client \"%s\" clipboard %d seqnum=%d, size=%zu", getName().c_str(), id, seq,
@@ -79,10 +78,10 @@ bool ClientProxy1_6::recvClipboard()
       m_clipboardDataCached.shrink_to_fit();
     } catch (const BaseException &e) {
       LOG_ERR("failed to receive clipboard %d from \"%s\": %s", id, getName().c_str(), e.what());
-      return;
+      return false;
     } catch (const std::exception &e) {
       LOG_ERR("failed to receive clipboard %d from \"%s\": %s", id, getName().c_str(), e.what());
-      return;
+      return false;
     }
 
     // notify
@@ -90,8 +89,14 @@ bool ClientProxy1_6::recvClipboard()
     info->m_id = id;
     info->m_sequenceNumber = seq;
     m_events->addEvent(Event(EventTypes::ClipboardChanged, getEventTarget(), info));
+
+    return true;
   } else if (r == TransferState::Error) {
     return false;
+  }
+
+  if (r == TransferState::InProgress) {
+    return true;
   }
 
   return true;

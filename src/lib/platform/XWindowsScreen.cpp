@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #define XK_MISCELLANY
 #define XK_XKB_KEYS
 #include <X11/keysymdef.h>
@@ -346,26 +347,33 @@ void XWindowsScreen::leave()
 
 bool XWindowsScreen::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
-  // fail if we don't have the requested clipboard
-  if (m_clipboard[id] == nullptr) {
-    return false;
-  }
-
-  // get the actual time.  ICCCM does not allow CurrentTime.
-  Time timestamp = XWindowsUtil::getCurrentTime(m_display, m_clipboard[id]->getWindow());
-
-  if (clipboard != nullptr) {
-    // save clipboard data
-    return Clipboard::copy(m_clipboard[id], clipboard, timestamp);
-  } else {
-    // assert clipboard ownership
-    if (!m_clipboard[id]->open(timestamp)) {
+  try {
+    // fail if we don't have the requested clipboard
+    if (m_clipboard[id] == nullptr) {
       return false;
     }
-    m_clipboard[id]->empty();
-    m_clipboard[id]->close();
-    return true;
+
+    // get the actual time.  ICCCM does not allow CurrentTime.
+    Time timestamp = XWindowsUtil::getCurrentTime(m_display, m_clipboard[id]->getWindow());
+
+    if (clipboard != nullptr) {
+      // save clipboard data
+      return Clipboard::copy(m_clipboard[id], clipboard, timestamp);
+    } else {
+      // assert clipboard ownership
+      if (!m_clipboard[id]->open(timestamp)) {
+        return false;
+      }
+      m_clipboard[id]->empty();
+      m_clipboard[id]->close();
+      return true;
+    }
+  } catch (const std::exception &e) {
+    LOG_WARN("X11 setClipboard failed for id=%u: %s", id, e.what());
+  } catch (...) {
+    LOG_WARN("X11 setClipboard failed for id=%u: unknown error", id);
   }
+  return false;
 }
 
 void XWindowsScreen::checkClipboards()
@@ -445,16 +453,23 @@ bool XWindowsScreen::getClipboard(ClipboardID id, IClipboard *clipboard) const
 {
   assert(clipboard != nullptr);
 
-  // fail if we don't have the requested clipboard
-  if (m_clipboard[id] == nullptr) {
-    return false;
+  try {
+    // fail if we don't have the requested clipboard
+    if (m_clipboard[id] == nullptr) {
+      return false;
+    }
+
+    // get the actual time.  ICCCM does not allow CurrentTime.
+    Time timestamp = XWindowsUtil::getCurrentTime(m_display, m_clipboard[id]->getWindow());
+
+    // copy the clipboard
+    return Clipboard::copy(clipboard, m_clipboard[id], timestamp);
+  } catch (const std::exception &e) {
+    LOG_WARN("X11 getClipboard failed for id=%u: %s", id, e.what());
+  } catch (...) {
+    LOG_WARN("X11 getClipboard failed for id=%u: unknown error", id);
   }
-
-  // get the actual time.  ICCCM does not allow CurrentTime.
-  Time timestamp = XWindowsUtil::getCurrentTime(m_display, m_clipboard[id]->getWindow());
-
-  // copy the clipboard
-  return Clipboard::copy(clipboard, m_clipboard[id], timestamp);
+  return false;
 }
 
 void XWindowsScreen::getShape(int32_t &x, int32_t &y, int32_t &w, int32_t &h) const

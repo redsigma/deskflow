@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <unistd.h>
 #include <vector>
 

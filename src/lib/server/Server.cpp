@@ -30,10 +30,10 @@
 #include <array>
 #endif
 #include <cmath>
-#include <exception>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
 
 using namespace deskflow::server;
 
@@ -517,14 +517,14 @@ void Server::switchScreen(BaseClientProxy *dst, int32_t x, int32_t y, bool forSc
           m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
         } catch (const BaseException &e) {
           LOG_ERR(
-              "failed to set clipboard during screen switch: from=\"%s\" to=\"%s\" clipboard=%d error=%s",
-              from.c_str(), getName(m_active).c_str(), id, e.what()
+              "failed to set clipboard during screen switch: from=\"%s\" to=\"%s\" clipboard=%d error=%s", from.c_str(),
+              getName(m_active).c_str(), id, e.what()
           );
           continue;
         } catch (const std::exception &e) {
           LOG_ERR(
-              "failed to set clipboard during screen switch: from=\"%s\" to=\"%s\" clipboard=%d error=%s",
-              from.c_str(), getName(m_active).c_str(), id, e.what()
+              "failed to set clipboard during screen switch: from=\"%s\" to=\"%s\" clipboard=%d error=%s", from.c_str(),
+              getName(m_active).c_str(), id, e.what()
           );
           continue;
         }
@@ -1565,7 +1565,7 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     return;
   }
 
-  if (!m_clientSet.contains(sender)) {
+  if (!m_clientSet.contains(const_cast<BaseClientProxy *>(sender))) {
     LOG_WARN(
         "ignored clipboard update from disconnected client: sender=\"%s\"(%p) clipboard=%d", getName(sender).c_str(),
         sender, id
@@ -1604,7 +1604,9 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     return;
   }
   if (!acquired) {
-    LOG_WARN("failed to read clipboard from sender: sender=\"%s\"(%p) clipboard=%d", getName(sender).c_str(), sender, id);
+    LOG_WARN(
+        "failed to read clipboard from sender: sender=\"%s\"(%p) clipboard=%d", getName(sender).c_str(), sender, id
+    );
     return;
   }
 
