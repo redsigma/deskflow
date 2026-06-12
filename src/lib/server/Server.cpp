@@ -1509,8 +1509,27 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     return;
   }
 
-  // should be the expected client
-  assert(sender == m_clients.find(clipboard.m_clipboardOwner)->second);
+  if (!m_clientSet.contains(sender)) {
+    LOG_WARN(
+        "ignored clipboard update from disconnected client: sender=\"%s\"(%p) clipboard=%d", getName(sender).c_str(),
+        sender, id
+    );
+    return;
+  }
+
+  const auto clipboardOwner = clipboard.m_clipboardOwner;
+  const auto ownerIt = m_clients.find(clipboardOwner);
+  if (ownerIt == m_clients.end()) {
+    LOG_WARN(
+        "clipboard owner for clipboard %d is stale, sender \"%s\"(%p) updating anyway", id, getName(sender).c_str(),
+        sender
+    );
+  } else if (sender != ownerIt->second) {
+    LOG_WARN(
+        "clipboard owner mismatch for clipboard %d: owner=\"%s\" sender=\"%s\"(%p)", id, clipboardOwner.c_str(),
+        getName(sender).c_str(), sender
+    );
+  }
 
   // get data
   sender->getClipboard(id, &clipboard.m_clipboard);
@@ -1538,6 +1557,11 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   }
 
   // send the new clipboard to the active screen
+  if (m_active == nullptr) {
+    LOG_WARN("ignored clipboard update because active screen is null for clipboard %d", id);
+    return;
+  }
+
   m_active->setClipboard(id, &clipboard.m_clipboard);
 }
 
