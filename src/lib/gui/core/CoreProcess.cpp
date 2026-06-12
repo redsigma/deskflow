@@ -32,6 +32,23 @@ namespace deskflow::gui {
 const int kRetryDelay = 1000;
 const auto kLineSplitRegex = QRegularExpression("\r|\n|\r\n");
 
+namespace {
+
+QString processExitStatusToString(const QProcess::ExitStatus exitStatus)
+{
+  switch (exitStatus) {
+    using enum QProcess::ExitStatus;
+  case NormalExit:
+    return QStringLiteral("normal");
+  case CrashExit:
+    return QStringLiteral("crash");
+  default:
+    return QStringLiteral("unknown");
+  }
+}
+
+} // namespace
+
 QString CoreProcess::processModeToString(const Settings::ProcessMode mode)
 {
   return QVariant::fromValue(mode).toString().toLower();
@@ -171,7 +188,7 @@ void CoreProcess::checkExistingProcess()
   client->connectToServer();
 }
 
-void CoreProcess::onProcessFinished(int exitCode, QProcess::ExitStatus)
+void CoreProcess::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
   using enum ProcessState;
   setConnectionState(ConnectionState::Disconnected);
@@ -181,12 +198,20 @@ void CoreProcess::onProcessFinished(int exitCode, QProcess::ExitStatus)
   }
 
   if (exitCode != s_exitSuccess) {
+    const auto statusText = processExitStatusToString(exitStatus);
+    qCritical("desktop process exited with code: %d (%s)", exitCode, qPrintable(statusText));
     setProcessState(Stopped);
     if (exitCode == s_exitDuplicate) {
       checkExistingProcess();
       return;
     }
-    qWarning("desktop process exited with code: %d", exitCode);
+    if (m_process) {
+      const auto tail = QString::fromLocal8Bit(m_process->readAllStandardOutput() + m_process->readAllStandardError());
+      if (!tail.isEmpty()) {
+        qWarning("desktop process tail output: %s", qPrintable(tail.trimmed()));
+      }
+      qDebug("desktop process state=%d pid=%lld", static_cast<int>(m_process->state()), m_process->processId());
+    }
     return;
   }
 
@@ -237,6 +262,10 @@ void CoreProcess::startForegroundProcess(const QStringList &args)
   if (m_process->waitForStarted()) {
     setProcessState(Started);
   } else {
+    qCritical(
+        "desktop process failed to start (error=%d: %s)", static_cast<int>(m_process->error()),
+        qPrintable(m_process->errorString())
+    );
     setProcessState(Stopped);
     Q_EMIT error(Error::StartFailed);
   }
@@ -376,6 +405,10 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
   if (processMode == ProcessMode::Desktop) {
     m_process = new QProcess(this);
     connect(m_process, &QProcess::finished, this, &CoreProcess::onProcessFinished, Qt::UniqueConnection);
+    connect(m_process, &QProcess::errorOccurred, this, [this](const QProcess::ProcessError error) {
+      const auto msg = qPrintable(m_process->errorString());
+      qWarning("desktop process Qt error=%d message=%s", static_cast<int>(error), msg);
+    });
     connect(
         m_process, &QProcess::readyReadStandardOutput, this, &CoreProcess::onProcessReadyReadStandardOutput,
         Qt::UniqueConnection
@@ -430,8 +463,16 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
           connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [] {
             qDebug("connected to core ipc server");
           });
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [] {
-            qWarning("failed to establish core ipc connection");
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [this] {
+            qWarning(
+                "failed to establish core ipc connection (core process state=%s connection state=%s pid=%lld)",
+                qPrintable(processStateToString(m_processState)),
+                qPrintable(QVariant::fromValue(m_connectionState).toString().toLower()),
+                m_process != nullptr ? m_process->processId() : 0
+            );
+            if (m_process != nullptr && m_process->state() == QProcess::ProcessState::Running) {
+              qWarning("core process is still running while ipc connect failed");
+            }
           });
           connect(m_coreIpcClient, &ipc::CoreIpcClient::serverShutdown, this, [] {
             qDebug("core ipc server shut down cleanly");
