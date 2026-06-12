@@ -43,6 +43,7 @@ public:
 
   void start(std::optional<ProcessMode> processMode = std::nullopt);
   void stop(std::optional<ProcessMode> processMode = std::nullopt);
+  void stop(std::optional<ProcessMode> processMode, const QString &reason);
   void restart();
   void cleanup();
   void applyLogLevel();
@@ -138,6 +139,9 @@ private:
   FileTail *m_daemonFileTail = nullptr;
   QProcess *m_process = nullptr;
   QString m_appPath;
+  QString m_lastStopReason;
+  uint64_t m_stopRequestId = 0;
+  uint64_t m_lastStopRequestId = 0;
 };
 
 } // namespace deskflow::gui

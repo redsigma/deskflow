@@ -51,6 +51,7 @@
 #include <QScrollBar>
 
 #include <memory>
+#include <optional>
 
 #if defined(Q_OS_MACOS)
 #include <ApplicationServices/ApplicationServices.h>
@@ -434,7 +435,7 @@ void MainWindow::startCore()
 void MainWindow::stopCore()
 {
   qDebug() << "stopping core process";
-  m_coreProcess.stop();
+  m_coreProcess.stop(std::nullopt, QStringLiteral("user requested stop/disconnect"));
   m_actionStartCore->setVisible(true);
   m_actionRestartCore->setVisible(false);
 }
@@ -454,7 +455,7 @@ void MainWindow::clearSettings()
   disconnect(m_trayIcon, nullptr, this, nullptr);
   disconnect(m_logDock->toggleViewAction(), nullptr, this, nullptr);
 
-  m_coreProcess.stop();
+  m_coreProcess.stop(std::nullopt, QStringLiteral("clear settings"));
   m_coreProcess.clearSettings();
 
   m_saveOnExit = false;
@@ -556,7 +557,11 @@ void MainWindow::coreModeToggled(bool checked)
   qDebug() << QStringLiteral("change mode to: %1").arg(QVariant::fromValue(mode).toString());
 
   if (m_coreProcess.isStarted() && m_coreProcess.mode() != mode)
-    m_coreProcess.stop();
+    m_coreProcess.stop(
+        std::nullopt, QStringLiteral("mode switch to ")
+                          .append(QVariant::fromValue(mode).toString())
+                          .append(QStringLiteral(" requested from ui"))
+    );
   m_coreProcess.setMode(mode);
 
   Settings::setValue(Settings::Core::CoreMode, mode);
@@ -912,7 +917,7 @@ void MainWindow::handlePeerFingerprint(const QString &fingerprint)
 
   if (isClient) {
     m_checkedServers.append(sha256Text);
-    m_coreProcess.stop();
+    m_coreProcess.stop(std::nullopt, QStringLiteral("pause for fingerprint confirmation"));
   } else {
     m_checkedClients.append(sha256Text);
   }
@@ -924,7 +929,7 @@ void MainWindow::handlePeerFingerprint(const QString &fingerprint)
     db.addTrusted(sha256);
     if (!db.write(trustedFingerprintDatabase())) {
       qCritical().noquote() << "unable to write fingerprint to db:" << trustedFingerprintDatabase();
-      m_coreProcess.stop();
+      m_coreProcess.stop(std::nullopt, QStringLiteral("fingerprint save failed"));
       return;
     }
     if (isClient) {

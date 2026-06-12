@@ -27,6 +27,8 @@
 #include <QMutexLocker>
 #include <QRegularExpression>
 
+#include <cstdint>
+
 namespace deskflow::gui {
 
 const int kRetryDelay = 1000;
@@ -197,9 +199,24 @@ void CoreProcess::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatu
     m_retryTimer.stop();
   }
 
+  const auto statusText = processExitStatusToString(exitStatus);
+  const bool stopping = m_processState == Stopping;
+  const auto stopReason = m_lastStopReason;
+  const auto stopRequestId = m_lastStopRequestId;
+
   if (exitCode != s_exitSuccess) {
-    const auto statusText = processExitStatusToString(exitStatus);
-    qCritical("desktop process exited with code: %d (%s)", exitCode, qPrintable(statusText));
+    if (stopping) {
+      qInfo(
+          "desktop process exited with code: %d (0x%08X) while stopping (stop request id=%llu reason=\"%s\", %s)",
+          exitCode, static_cast<uint32_t>(exitCode), static_cast<unsigned long long>(stopRequestId),
+          qPrintable(stopReason), qPrintable(statusText)
+      );
+    } else {
+      qCritical(
+          "desktop process exited with code: %d (0x%08X) (%s)", exitCode, static_cast<uint32_t>(exitCode),
+          qPrintable(statusText)
+      );
+    }
     setProcessState(Stopped);
     if (exitCode == s_exitDuplicate) {
       checkExistingProcess();
@@ -310,7 +327,10 @@ void CoreProcess::stopForegroundProcess() const
   qInfo("stopping core desktop process");
 
   if (m_process->state() == QProcess::ProcessState::Running) {
-    qDebug("process is running, closing");
+    qDebug(
+        "process is running, closing pid=%lld stop request id=%llu reason=\"%s\"", m_process->processId(),
+        static_cast<unsigned long long>(m_lastStopRequestId), qPrintable(m_lastStopReason)
+    );
     m_process->close();
   } else {
     qDebug("process is not running, skipping terminate");
@@ -464,6 +484,10 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
             qDebug("connected to core ipc server");
           });
           connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [this] {
+            if (m_processState == ProcessState::Stopping) {
+              qDebug("core ipc connect failed while process is stopping");
+              return;
+            }
             qWarning(
                 "failed to establish core ipc connection (core process state=%s connection state=%s pid=%lld)",
                 qPrintable(processStateToString(m_processState)),
@@ -495,12 +519,26 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
 
 void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
 {
+  stop(processModeOption, QStringLiteral("unspecified"));
+}
+
+void CoreProcess::stop(std::optional<ProcessMode> processModeOption, const QString &reason)
+{
   QMutexLocker locker(&m_processMutex);
 
   const auto currentMode = Settings::value(Settings::Core::ProcessMode).value<ProcessMode>();
   const auto processMode = processModeOption.value_or(currentMode);
+  const auto stopRequestId = ++m_stopRequestId;
+  m_lastStopRequestId = stopRequestId;
+  m_lastStopReason = reason.isEmpty() ? QStringLiteral("unspecified") : reason;
 
-  qInfo("stopping core process (%s mode)", qPrintable(processModeToString(processMode)));
+  qInfo(
+      "core stop requested: id=%llu reason=\"%s\" (%s mode, state=%s, connection=%s, pid=%lld)",
+      static_cast<unsigned long long>(stopRequestId), qPrintable(m_lastStopReason),
+      qPrintable(processModeToString(processMode)), qPrintable(processStateToString(m_processState)),
+      qPrintable(QVariant::fromValue(m_connectionState).toString().toLower()),
+      m_process != nullptr ? m_process->processId() : 0
+  );
 
   if (m_coreIpcClient) {
     m_coreIpcClient->disconnectFromServer();
@@ -538,12 +576,12 @@ void CoreProcess::restart()
         QStringLiteral("process mode changed to %1, stopping %2 process")
             .arg(processModeToString(processMode), processModeToString(m_lastProcessMode.value()));
     qDebug().noquote() << debugMessage;
-    stop(m_lastProcessMode);
+    stop(m_lastProcessMode, QStringLiteral("mode changed"));
   } else {
     // in service mode: though there is technically no need to stop the service
     // before restarting it, it does make for cleaner process state tracking,
     // especially if something goes wrong with starting the service.
-    stop();
+    stop(std::nullopt, QStringLiteral("restart"));
   }
 
   start();
@@ -556,7 +594,7 @@ void CoreProcess::cleanup()
   const auto isDesktop = Settings::value(Settings::Core::ProcessMode).value<ProcessMode>() == ProcessMode::Desktop;
   const auto isRunning = m_processState == ProcessState::Started;
   if (isDesktop && isRunning) {
-    stop();
+    stop(std::nullopt, QStringLiteral("cleanup"));
   }
 }
 
