@@ -85,27 +85,27 @@ int main(int argc, char **argv)
 
   CoreArgParser parser(QCoreApplication::arguments());
 
+  // Print any parser errors
+  if (!parser.errorText().isEmpty()) {
+    QTextStream(stdout) << parser.errorText() << "\n";
+  }
+
+  if (parser.help()) {
+    showHelp(parser);
+    return s_exitSuccess;
+  }
+
+  if (parser.version()) {
+    QTextStream(stdout) << parser.versionText();
+    return s_exitSuccess;
+  }
+
 #if defined(Q_OS_WIN)
   // Keep a Qt app object alive while parsing args/settings so
   // portableSettingsFile() can safely use applicationDirPath().
   {
     QCoreApplication bootstrapApp(argc, argv);
 #endif
-
-    // Print any parser errors
-    if (!parser.errorText().isEmpty()) {
-      QTextStream(stdout) << parser.errorText() << "\n";
-    }
-
-    if (parser.help()) {
-      showHelp(parser);
-      return s_exitSuccess;
-    }
-
-    if (parser.version()) {
-      QTextStream(stdout) << parser.versionText();
-      return s_exitSuccess;
-    }
 
     // Before we check any more args we need to check for a duplicate process.
     // Create a shared memory segment with a unique key
