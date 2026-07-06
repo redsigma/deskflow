@@ -106,7 +106,9 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
         case Connected: {
           setSecurityIconVisible(true);
           m_connectionInterval = -1;
-          if (!isServer) {
+          if (isServer) {
+            m_lblStatus->setText(tr("%1 is waiting for clients").arg(kAppName));
+          } else {
             m_lblStatus->setText(tr("%1 is connected as client of %2")
                                      .arg(kAppName, Settings::value(Settings::Client::RemoteHost).toString()));
           }

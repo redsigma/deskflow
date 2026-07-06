@@ -1358,6 +1358,13 @@ void Server::handleClientDisconnected(BaseClientProxy *client)
   );
 
   const bool disconnectWasActive = (client == m_active);
+  LOG_DEBUG(
+      "server client disconnect membership: client=\"%s\"(%p) inClientSet=%d inOldClients=%d activeMatch=%d "
+      "activeSaverMatch=%d",
+      clientName.c_str(), client, m_clientSet.contains(client), m_oldClients.contains(client), disconnectWasActive,
+      client == m_activeSaver
+  );
+
   // client has disconnected.  it might be an old client or an
   // active client.  we don't care so just handle it both ways.
   removeActiveClient(client);

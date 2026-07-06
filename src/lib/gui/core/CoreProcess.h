@@ -115,6 +115,7 @@ private:
   QPair<bool, QString> persistServerConfig() const;
   void setConnectionState(ConnectionState state);
   void setProcessState(ProcessState state);
+  void cleanupCoreIpcClient(const char *reason);
   bool checkSecureSocket(const QString &line);
   void handleLogLines(const QString &text);
   QString correctedAddress(const QString &address) const;

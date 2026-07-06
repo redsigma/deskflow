@@ -167,8 +167,15 @@ bool EventQueue::getEvent(Event &event, double timeout)
 bool EventQueue::dispatchEvent(const Event &event)
 {
   void *target = event.getTarget();
-  if (auto typeHandler = getHandler(event.getType(), target); typeHandler.has_value()) {
-    (*typeHandler)(event);
+  EventHandler handler;
+  if (getHandler(event.getType(), target, handler)) {
+    if (event.getType() == EventTypes::ClientProxyDisconnected) {
+      LOG_DEBUG("dispatch ClientProxyDisconnected begin: target=%p", target);
+    }
+    handler(event);
+    if (event.getType() == EventTypes::ClientProxyDisconnected) {
+      LOG_DEBUG("dispatch ClientProxyDisconnected end: target=%p", target);
+    }
     return true;
   }
   if (auto anyHandler = getHandler(EventTypes::Unknown, target); anyHandler.has_value()) {
@@ -470,4 +477,5 @@ void EventQueue::Timer::fillEvent(TimerEvent &event) const
     event.m_count = static_cast<uint32_t>((m_timeout - m_time) / m_timeout);
   }
 }
+
 

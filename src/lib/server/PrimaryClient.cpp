@@ -8,6 +8,7 @@
 #include "server/PrimaryClient.h"
 
 #include "base/Log.h"
+#include "deskflow/IPlatformScreen.h"
 #include "deskflow/Screen.h"
 
 #include <exception>
@@ -108,6 +109,8 @@ void PrimaryClient::enter(int32_t xAbs, int32_t yAbs, uint32_t seqNum, KeyModifi
     m_screen->warpCursor(xAbs, yAbs);
   }
   m_screen->enter(mask);
+  m_screen->getPlatformScreen()->fakeAllKeysUp();
+  m_screen->getPlatformScreen()->updateKeyState();
 }
 
 bool PrimaryClient::leave()

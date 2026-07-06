@@ -194,6 +194,7 @@ void CoreProcess::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatu
 {
   using enum ProcessState;
   setConnectionState(ConnectionState::Disconnected);
+  cleanupCoreIpcClient("desktop process finished");
 
   if (m_retryTimer.isActive()) {
     m_retryTimer.stop();
@@ -212,9 +213,11 @@ void CoreProcess::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatu
           qPrintable(stopReason), qPrintable(statusText)
       );
     } else {
-      qCritical(
-          "desktop process exited with code: %d (0x%08X) (%s)", exitCode, static_cast<uint32_t>(exitCode),
-          qPrintable(statusText)
+      qWarning(
+          "desktop process exited with code: %d (0x%08X) (%s, process state=%s connection state=%s pid=%lld)", exitCode,
+          static_cast<uint32_t>(exitCode), qPrintable(statusText), qPrintable(processStateToString(m_processState)),
+          qPrintable(QVariant::fromValue(m_connectionState).toString().toLower()),
+          m_process != nullptr ? m_process->processId() : 0
       );
     }
     setProcessState(Stopped);
@@ -475,9 +478,11 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
         // Delay briefly to give the core process time to start its IPC server.
         QTimer::singleShot(kRetryDelay, this, [this] {
           if (m_processState != ProcessState::Started) {
+            qDebug("skipping core ipc connect, process state is %s", qPrintable(processStateToString(m_processState)));
             return;
           }
 
+          cleanupCoreIpcClient("replacing stale core ipc client");
           m_coreIpcClient = new ipc::CoreIpcClient(this);
           connect(m_coreIpcClient, &ipc::CoreIpcClient::commandReceived, this, &CoreProcess::onCoreIpcMessageReceived);
           connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [] {
@@ -486,6 +491,16 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
           connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [this] {
             if (m_processState == ProcessState::Stopping) {
               qDebug("core ipc connect failed while process is stopping");
+              return;
+            }
+            if (m_processState != ProcessState::Started) {
+              qDebug(
+                  "core ipc connect failed after process stopped (core process state=%s connection state=%s pid=%lld)",
+                  qPrintable(processStateToString(m_processState)),
+                  qPrintable(QVariant::fromValue(m_connectionState).toString().toLower()),
+                  m_process != nullptr ? m_process->processId() : 0
+              );
+              cleanupCoreIpcClient("ipc connect failed after process stopped");
               return;
             }
             qWarning(
@@ -541,9 +556,7 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption, const QStri
   );
 
   if (m_coreIpcClient) {
-    m_coreIpcClient->disconnectFromServer();
-    m_coreIpcClient->deleteLater();
-    m_coreIpcClient = nullptr;
+    cleanupCoreIpcClient("core stop requested");
   }
 
   if (m_processState == ProcessState::Starting) {
@@ -638,6 +651,19 @@ void CoreProcess::setProcessState(ProcessState state)
   );
   m_processState = state;
   Q_EMIT processStateChanged(state);
+}
+
+void CoreProcess::cleanupCoreIpcClient(const char *reason)
+{
+  if (m_coreIpcClient == nullptr) {
+    return;
+  }
+
+  qDebug("cleaning up core ipc client: %s", reason);
+  m_coreIpcClient->disconnect(this);
+  m_coreIpcClient->disconnectFromServer();
+  m_coreIpcClient->deleteLater();
+  m_coreIpcClient = nullptr;
 }
 
 void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString &args)
