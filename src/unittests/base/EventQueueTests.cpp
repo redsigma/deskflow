@@ -55,4 +55,36 @@ void EventQueueTests::dispatchEvent_handlerRemovesItself_keepsHandlerAliveUntilR
   QVERIFY(handlerLifetimeObserver.expired());
 }
 
+void EventQueueTests::dispatchEvent_handlerRemovesItself_returnsNormally()
+{
+  EventQueue events;
+  int target = 0;
+  int calls = 0;
+
+  events.addHandler(EventTypes::ClientProxyDisconnected, &target, [&](const Event &) {
+    ++calls;
+    events.removeHandler(EventTypes::ClientProxyDisconnected, &target);
+  });
+
+  QVERIFY(events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, &target)));
+  QCOMPARE(calls, 1);
+  QVERIFY(!events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, &target)));
+}
+
+void EventQueueTests::dispatchEvent_unknownHandlerRemovesItself_returnsNormally()
+{
+  EventQueue events;
+  int target = 0;
+  int calls = 0;
+
+  events.addHandler(EventTypes::Unknown, &target, [&](const Event &) {
+    ++calls;
+    events.removeHandler(EventTypes::Unknown, &target);
+  });
+
+  QVERIFY(events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, &target)));
+  QCOMPARE(calls, 1);
+  QVERIFY(!events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, &target)));
+}
+
 QTEST_MAIN(EventQueueTests)

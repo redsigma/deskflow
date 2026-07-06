@@ -295,17 +295,18 @@ void EventQueue::removeHandlers(void *target)
   }
 }
 
-std::optional<EventQueue::EventHandler> EventQueue::getHandler(EventTypes type, void *target) const
+bool EventQueue::getHandler(EventTypes type, void *target, EventHandler &handler) const
 {
   std::scoped_lock lock{m_mutex};
   if (HandlerTable::const_iterator index = m_handlers.find(target); index != m_handlers.end()) {
     const TypeHandlerTable &typeHandlers = index->second;
     TypeHandlerTable::const_iterator index2 = typeHandlers.find(type);
     if (index2 != typeHandlers.end()) {
-      return index2->second;
+      handler = index2->second;
+      return true;
     }
   }
-  return std::nullopt;
+  return false;
 }
 
 uint32_t EventQueue::saveEvent(Event &&event)
@@ -469,3 +470,4 @@ void EventQueue::Timer::fillEvent(TimerEvent &event) const
     event.m_count = static_cast<uint32_t>((m_timeout - m_time) / m_timeout);
   }
 }
+

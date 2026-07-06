@@ -9,6 +9,7 @@
 #include "arch/Arch.h"
 
 #include <QObject>
+#include <QTest>
 
 class EventQueueTests : public QObject
 {
@@ -19,6 +20,8 @@ private Q_SLOTS:
   void dispatchEvent_noHandler_returnsFalse();
   void dispatchEvent_noTypeHandler_dispatchesUnknownHandler();
   void dispatchEvent_handlerRemovesItself_keepsHandlerAliveUntilReturn();
+  void dispatchEvent_handlerRemovesItself_returnsNormally();
+  void dispatchEvent_unknownHandlerRemovesItself_returnsNormally();
 
 private:
   Arch m_arch;

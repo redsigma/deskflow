@@ -51,7 +51,7 @@ public:
   void waitForReady() const override;
 
 private:
-  std::optional<EventHandler> getHandler(EventTypes type, void *target) const;
+  bool getHandler(EventTypes type, void *target, EventHandler &handler) const;
   uint32_t saveEvent(Event &&event);
   Event removeEvent(uint32_t eventID);
   bool hasTimerExpired(Event &event);
@@ -123,3 +123,4 @@ private:
   CondVar<bool> *m_readyCondVar = nullptr;
   std::queue<Event> m_pending;
 };
+

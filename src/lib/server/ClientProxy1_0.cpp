@@ -53,6 +53,12 @@ ClientProxy1_0::~ClientProxy1_0()
 
 void ClientProxy1_0::disconnect()
 {
+  if (m_disconnected) {
+    LOG_DEBUG("client proxy disconnect skipped: client=\"%s\"(%p) already disconnected", getName().c_str(), this);
+    return;
+  }
+  m_disconnected = true;
+
   LOG_DEBUG(
       "client proxy disconnect begin: client=\"%s\"(%p) parser=%s heartbeatAlarm=%.2f timer=%p", getName().c_str(),
       this, (m_parser == &ClientProxy1_0::parseHandshakeMessage ? "handshake" : "message"), m_heartbeatAlarm,

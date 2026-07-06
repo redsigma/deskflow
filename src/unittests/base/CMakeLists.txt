@@ -44,3 +44,4 @@ create_test(
   SOURCE EventQueueTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/base"
 )
+

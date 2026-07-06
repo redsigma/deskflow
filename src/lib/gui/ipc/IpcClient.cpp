@@ -170,7 +170,7 @@ void IpcClient::handleHandshakeMessage(const QStringList &parts)
 {
   if (parts.at(0) == QStringLiteral("error")) {
     const auto detail = parts.size() >= 2 ? parts.at(1) : QStringLiteral("unknown");
-    qCritical().noquote() << QStringLiteral("%1 ipc server rejected connection: %2").arg(m_typeName, detail);
+    qWarning().noquote() << QStringLiteral("%1 ipc server rejected connection: %2").arg(m_typeName, detail);
     disconnectFromServer();
     Q_EMIT connectionFailed();
     return;
@@ -192,7 +192,7 @@ void IpcClient::handleHandshakeMessage(const QStringList &parts)
   }
 
   if (parts.size() < 2) {
-    qCritical().noquote() << QStringLiteral("%1 ipc server hello missing version").arg(m_typeName);
+    qWarning().noquote() << QStringLiteral("%1 ipc server hello missing version").arg(m_typeName);
     disconnectFromServer();
     Q_EMIT connectionFailed();
     return;
