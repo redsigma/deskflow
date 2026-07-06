@@ -100,32 +100,22 @@ int main(int argc, char **argv)
     return s_exitSuccess;
   }
 
-#if defined(Q_OS_WIN)
-  // Keep a Qt app object alive while parsing args/settings so
-  // portableSettingsFile() can safely use applicationDirPath().
-  {
-    QCoreApplication bootstrapApp(argc, argv);
-#endif
+  // Before we check any more args we need to check for a duplicate process.
+  // Create a shared memory segment with a unique key
+  // This is to prevent a new instance from running if one is already running
+  QSharedMemory sharedMemory(kCoreBinName);
 
-    // Before we check any more args we need to check for a duplicate process.
-    // Create a shared memory segment with a unique key
-    // This is to prevent a new instance from running if one is already running
-    QSharedMemory sharedMemory(kCoreBinName);
+  // Attempt to attach first and detach in order to clean up stale shm chunks
+  // This can happen if the previous instance was killed or crashed
+  if (sharedMemory.attach())
+    sharedMemory.detach();
 
-    // Attempt to attach first and detach in order to clean up stale shm chunks
-    // This can happen if the previous instance was killed or crashed
-    if (sharedMemory.attach())
-      sharedMemory.detach();
-
-    if (!sharedMemory.create(1) && parser.singleInstanceOnly()) {
-      LOG_WARN("an instance of deskflow core is already running");
-      return s_exitDuplicate;
-    }
-
-    parser.parse();
-#if defined(Q_OS_WIN)
+  if (!sharedMemory.create(1) && parser.singleInstanceOnly()) {
+    LOG_WARN("an instance of deskflow core is already running");
+    return s_exitDuplicate;
   }
-#endif
+
+  parser.parse();
 
   EventQueue events;
   const auto processName = QFileInfo(argv[0]).fileName();

@@ -14,6 +14,8 @@
 #include "base/Log.h"
 #include "common/Constants.h"
 
+#include <string>
+
 //
 // ArchDaemonWindows
 //
@@ -61,21 +63,29 @@ int ArchDaemonWindows::daemonize(DaemonFunc const &func)
   m_daemonFunc = func;
 
   // construct the service entry
+  const auto serviceNameText = QString(kAppName);
+  std::wstring serviceName = serviceNameText.toStdWString();
+  const auto serviceNameUtf8 = serviceNameText.toUtf8();
   SERVICE_TABLE_ENTRY entry[2];
-  entry[0].lpServiceName = const_cast<wchar_t *>(QString(kAppName).toStdWString().c_str());
+  entry[0].lpServiceName = serviceName.data();
   entry[0].lpServiceProc = &ArchDaemonWindows::serviceMainEntry;
   entry[1].lpServiceName = nullptr;
   entry[1].lpServiceProc = nullptr;
 
   // hook us up to the service control manager.  this won't return
   // (if successful) until the processes have terminated.
+  LOG_DEBUG("starting service control dispatcher: service=%s", serviceNameUtf8.constData());
   s_daemon = this;
   if (StartServiceCtrlDispatcher(entry) == 0) {
     // StartServiceCtrlDispatcher failed
+    const auto error = GetLastError();
+    const auto errorText = windowsErrorToString(error);
+    LOG_ERR("service control dispatcher failed: service=%s error=%s", serviceNameUtf8.constData(), errorText.c_str());
     s_daemon = nullptr;
-    throw ArchDaemonFailedException(windowsErrorToString(GetLastError()));
+    throw ArchDaemonFailedException(errorText);
   }
 
+  LOG_DEBUG("service control dispatcher stopped: service=%s", serviceNameUtf8.constData());
   s_daemon = nullptr;
   return m_daemonResult;
 }
@@ -207,6 +217,10 @@ void ArchDaemonWindows::serviceMain(DWORD argc, LPTSTR *argvIn)
   using ArgList = std::vector<LPWSTR>;
   using Arguments = std::vector<std::wstring>;
   const wchar_t **argv = const_cast<const wchar_t **>(argvIn);
+  const auto serviceArg = (argc > 0 && argvIn != nullptr && argvIn[0] != nullptr) ? QString::fromWCharArray(argvIn[0])
+                                                                                  : QStringLiteral("<null>");
+  const auto serviceArgUtf8 = serviceArg.toUtf8();
+  LOG_DEBUG("service main entered: argc=%lu service=%s", static_cast<unsigned long>(argc), serviceArgUtf8.constData());
 
   // create synchronization objects
   m_serviceMutex = ARCH->newMutex();
@@ -216,6 +230,11 @@ void ArchDaemonWindows::serviceMain(DWORD argc, LPTSTR *argvIn)
   m_statusHandle = RegisterServiceCtrlHandler(argv[0], &ArchDaemonWindows::serviceHandlerEntry);
   if (m_statusHandle == 0) {
     // cannot start as service
+    const auto error = GetLastError();
+    LOG_ERR(
+        "failed to register service control handler: service=%s error=%s", serviceArgUtf8.constData(),
+        windowsErrorToString(error).c_str()
+    );
     m_daemonResult = -1;
     ARCH->closeCondVar(m_serviceCondVar);
     ARCH->closeMutex(m_serviceMutex);

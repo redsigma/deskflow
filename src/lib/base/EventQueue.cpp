@@ -169,13 +169,7 @@ bool EventQueue::dispatchEvent(const Event &event)
   void *target = event.getTarget();
   EventHandler handler;
   if (getHandler(event.getType(), target, handler)) {
-    if (event.getType() == EventTypes::ClientProxyDisconnected) {
-      LOG_DEBUG("dispatch ClientProxyDisconnected begin: target=%p", target);
-    }
     handler(event);
-    if (event.getType() == EventTypes::ClientProxyDisconnected) {
-      LOG_DEBUG("dispatch ClientProxyDisconnected end: target=%p", target);
-    }
     return true;
   }
   if (auto anyHandler = getHandler(EventTypes::Unknown, target); anyHandler.has_value()) {
