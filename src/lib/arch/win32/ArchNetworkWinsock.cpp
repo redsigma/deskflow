@@ -63,6 +63,36 @@ static int(PASCAL FAR *WSAEnumNetworkEvents_winsock)(SOCKET, WSAEVENT, LPWSANETW
 
 static HMODULE s_networkModule = nullptr;
 
+static const char *winsockErrorName(int err)
+{
+  switch (err) {
+  case WSAEHOSTUNREACH:
+    return "WSAEHOSTUNREACH";
+  case WSAENETUNREACH:
+    return "WSAENETUNREACH";
+  case WSAETIMEDOUT:
+    return "WSAETIMEDOUT";
+  case WSAECONNREFUSED:
+    return "WSAECONNREFUSED";
+  case WSAEWOULDBLOCK:
+    return "WSAEWOULDBLOCK";
+  case WSAEISCONN:
+    return "WSAEISCONN";
+  case WSAENETDOWN:
+    return "WSAENETDOWN";
+  case WSAENETRESET:
+    return "WSAENETRESET";
+  case WSAECONNRESET:
+    return "WSAECONNRESET";
+  case WSAECONNABORTED:
+    return "WSAECONNABORTED";
+  case WSAEADDRNOTAVAIL:
+    return "WSAEADDRNOTAVAIL";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 static FARPROC netGetProcAddress(HMODULE module, LPCSTR name)
 {
   FARPROC func = ::GetProcAddress(module, name);
@@ -357,13 +387,18 @@ bool ArchNetworkWinsock::connectSocket(ArchSocket s, ArchNetAddress addr)
   assert(addr != nullptr);
 
   if (connect_winsock(s->m_socket, TYPED_ADDR(struct sockaddr, addr), addr->m_len) == SOCKET_ERROR) {
-    if (getsockerror_winsock() == WSAEISCONN) {
+    const int err = getsockerror_winsock();
+    LOG_DEBUG(
+        "winsock connect result: socket=%llu err=%d name=%s", static_cast<unsigned long long>(s->m_socket), err,
+        winsockErrorName(err)
+    );
+    if (err == WSAEISCONN) {
       return true;
     }
-    if (getsockerror_winsock() == WSAEWOULDBLOCK) {
+    if (err == WSAEWOULDBLOCK) {
       return false;
     }
-    throwError(getsockerror_winsock());
+    throwError(err);
   }
   return true;
 }
@@ -577,6 +612,10 @@ void ArchNetworkWinsock::throwErrorOnSocket(ArchSocket s)
 
   // throw if there's an error
   if (err != 0) {
+    LOG_DEBUG(
+        "winsock socket error: socket=%llu err=%d name=%s", static_cast<unsigned long long>(s->m_socket), err,
+        winsockErrorName(err)
+    );
     throwError(err);
   }
 }

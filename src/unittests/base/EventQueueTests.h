@@ -26,3 +26,4 @@ private Q_SLOTS:
 private:
   Arch m_arch;
 };
+

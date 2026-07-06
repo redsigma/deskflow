@@ -474,4 +474,3 @@ private:
   bool m_disableLockToScreen = false;
   bool m_enableClipboard = true;
 };
-

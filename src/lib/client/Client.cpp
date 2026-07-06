@@ -93,14 +93,23 @@ void Client::setServerAddress(const NetworkAddress &address)
 void Client::connect(size_t addressIndex)
 {
   if (m_stream != nullptr) {
+    LOG_DEBUG(
+        "client connect skipped because stream exists: name=\"%s\" stream=%p activeConnectId=%llu addressIndex=%zu",
+        m_name.c_str(), m_stream, static_cast<unsigned long long>(m_activeConnectAttemptId), addressIndex
+    );
     return;
   }
   if (m_suspended) {
+    LOG_DEBUG("client connect deferred while suspended: name=\"%s\" addressIndex=%zu", m_name.c_str(), addressIndex);
     m_connectOnResume = true;
     return;
   }
 
+  const auto attemptId = ++m_connectAttemptId;
+  m_activeConnectAttemptId = attemptId;
+  m_activeConnectEventTarget = nullptr;
   auto securityLevel = m_useSecureNetwork ? SecurityLevel::PeerAuth : SecurityLevel::PlainText;
+  const auto bindInterface = Settings::value(Settings::Core::Interface).toString();
 
   try {
     // resolve the server hostname.  do this every time we connect
@@ -111,11 +120,13 @@ void Client::connect(size_t addressIndex)
     m_resolvedAddressesCount = m_serverAddress.resolve(addressIndex);
 
     // m_serverAddress will be null if the hostname address is not reolved
+    std::string resolvedAddress = "<null>";
     if (m_serverAddress.getAddress() != nullptr) {
+      resolvedAddress = ARCH->addrToString(m_serverAddress.getAddress());
       // to help users troubleshoot, show server host name (issue: 60)
       LOG_DEBUG(
-          "connecting to '%s': %s:%i", m_serverAddress.getHostname().c_str(),
-          ARCH->addrToString(m_serverAddress.getAddress()).c_str(), m_serverAddress.getPort()
+          "connecting to '%s': %s:%i", m_serverAddress.getHostname().c_str(), resolvedAddress.c_str(),
+          m_serverAddress.getPort()
       );
       ipcSendConnectionState(deskflow::core::ConnectionState::Connecting);
     }
@@ -126,13 +137,27 @@ void Client::connect(size_t addressIndex)
 
     // filter socket messages, including a packetizing filter
     m_stream = new PacketStreamFilter(m_events, socket, true);
+    m_activeConnectEventTarget = m_stream->getEventTarget();
+
+    LOG_DEBUG(
+        "client connect attempt begin: id=%llu name=\"%s\" serverHost=\"%s\" resolved=\"%s\" port=%d addressIndex=%zu "
+        "resolvedCount=%zu security=%s socket=%p stream=%p eventTarget=%p bindInterface=\"%s\"",
+        static_cast<unsigned long long>(attemptId), m_name.c_str(), m_serverAddress.getHostname().c_str(),
+        resolvedAddress.c_str(), m_serverAddress.getPort(), addressIndex, m_resolvedAddressesCount,
+        (m_useSecureNetwork ? "tls" : "plain"), socket, m_stream, m_activeConnectEventTarget,
+        (bindInterface.isEmpty() ? "<default>" : qPrintable(bindInterface))
+    );
 
     // connect
     LOG_VERBOSE("connecting to server");
-    setupConnecting();
+    setupConnecting(attemptId, m_activeConnectEventTarget);
     setupTimer();
     socket->connect(m_serverAddress);
   } catch (BaseException &e) {
+    LOG_DEBUG(
+        "client connect attempt exception: id=%llu name=\"%s\" stream=%p error=\"%s\"",
+        static_cast<unsigned long long>(attemptId), m_name.c_str(), m_stream, e.what()
+    );
     cleanupTimer();
     cleanupConnecting();
     cleanupStream();
@@ -476,22 +501,24 @@ void Client::sendConnectionFailedEvent(const char *msg)
   m_events->addEvent(std::move(event));
 }
 
-void Client::setupConnecting()
+void Client::setupConnecting(uint64_t attemptId, void *eventTarget)
 {
   assert(m_stream != nullptr);
 
   if (Settings::value(Settings::Security::TlsEnabled).toBool()) {
-    m_events->addHandler(EventTypes::DataSocketSecureConnected, m_stream->getEventTarget(), [this](const auto &) {
-      handleConnected();
-    });
+    m_events->addHandler(
+        EventTypes::DataSocketSecureConnected, eventTarget,
+        [this, attemptId, eventTarget](const auto &) { handleConnected(attemptId, eventTarget); }
+    );
   } else {
-    m_events->addHandler(EventTypes::DataSocketConnected, m_stream->getEventTarget(), [this](const auto &) {
-      handleConnected();
+    m_events->addHandler(EventTypes::DataSocketConnected, eventTarget, [this, attemptId, eventTarget](const auto &) {
+      handleConnected(attemptId, eventTarget);
     });
   }
-  m_events->addHandler(EventTypes::DataSocketConnectionFailed, m_stream->getEventTarget(), [this](const auto &e) {
-    handleConnectionFailed(e);
-  });
+  m_events->addHandler(
+      EventTypes::DataSocketConnectionFailed, eventTarget,
+      [this, attemptId, eventTarget](const auto &e) { handleConnectionFailed(e, attemptId, eventTarget); }
+  );
 }
 
 void Client::setupConnection()
@@ -607,12 +634,30 @@ void Client::cleanupTimer()
 
 void Client::cleanupStream()
 {
+  LOG_DEBUG(
+      "client cleanupStream: name=\"%s\" activeConnectId=%llu stream=%p eventTarget=%p", m_name.c_str(),
+      static_cast<unsigned long long>(m_activeConnectAttemptId), m_stream, m_activeConnectEventTarget
+  );
   delete m_stream;
   m_stream = nullptr;
+  m_activeConnectEventTarget = nullptr;
 }
 
-void Client::handleConnected()
+void Client::handleConnected(uint64_t attemptId, void *eventTarget)
 {
+  if (attemptId != m_activeConnectAttemptId || m_stream == nullptr || eventTarget != m_stream->getEventTarget()) {
+    LOG_DEBUG(
+        "stale client connect success ignored: id=%llu activeId=%llu eventTarget=%p activeEventTarget=%p stream=%p",
+        static_cast<unsigned long long>(attemptId), static_cast<unsigned long long>(m_activeConnectAttemptId),
+        eventTarget, m_activeConnectEventTarget, m_stream
+    );
+    return;
+  }
+
+  LOG_DEBUG(
+      "client connect attempt connected: id=%llu stream=%p eventTarget=%p", static_cast<unsigned long long>(attemptId),
+      m_stream, eventTarget
+  );
   LOG_VERBOSE("connected, waiting for hello");
   cleanupConnecting();
   setupConnection();
@@ -625,9 +670,27 @@ void Client::handleConnected()
   }
 }
 
-void Client::handleConnectionFailed(const Event &event)
+void Client::handleConnectionFailed(const Event &event, uint64_t attemptId, void *eventTarget)
 {
   auto *info = static_cast<IDataSocket::ConnectionFailedInfo *>(event.getData());
+  const bool staleEvent = attemptId != m_activeConnectAttemptId || m_stream == nullptr ||
+                          eventTarget != event.getTarget() || eventTarget != m_activeConnectEventTarget;
+
+  if (staleEvent) {
+    LOG_DEBUG(
+        "stale client connect failure ignored: id=%llu activeId=%llu eventTarget=%p expectedTarget=%p "
+        "activeEventTarget=%p stream=%p reason=\"%s\"",
+        static_cast<unsigned long long>(attemptId), static_cast<unsigned long long>(m_activeConnectAttemptId),
+        event.getTarget(), eventTarget, m_activeConnectEventTarget, m_stream, info->m_what.c_str()
+    );
+    delete info;
+    return;
+  }
+
+  LOG_DEBUG(
+      "client connect attempt failed: id=%llu stream=%p eventTarget=%p reason=\"%s\"",
+      static_cast<unsigned long long>(attemptId), m_stream, eventTarget, info->m_what.c_str()
+  );
 
   cleanupTimer();
   cleanupConnecting();
@@ -639,6 +702,10 @@ void Client::handleConnectionFailed(const Event &event)
 
 void Client::handleConnectTimeout()
 {
+  LOG_DEBUG(
+      "client connect attempt timed out: id=%llu stream=%p eventTarget=%p",
+      static_cast<unsigned long long>(m_activeConnectAttemptId), m_stream, m_activeConnectEventTarget
+  );
   cleanupTimer();
   cleanupConnecting();
   cleanupConnection();

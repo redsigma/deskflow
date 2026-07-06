@@ -160,7 +160,11 @@ void ClientApp::handleClientRestart(const Event &, EventQueueTimer *timer)
 
 void ClientApp::scheduleClientRestart(double retryTime)
 {
-  LOG_DEBUG("retry in %.0f seconds", retryTime);
+  const bool dynamicRetry = Settings::value(Settings::Client::DynamicConnectionRetry).toBool();
+  LOG_DEBUG(
+      "retry in %.0f seconds: retryCount=%u currentServerIndex=%zu resolvedAddressIndex=%zu dynamicRetry=%d", retryTime,
+      m_retryCount, m_currentServerIndex, m_lastServerAddressIndex, dynamicRetry
+  );
   ipcSendToClient("retryIn", QString::number(retryTime, 'f', 0));
   // install a timer and handler to retry later
   EventQueueTimer *timer = getEvents()->newOneShotTimer(retryTime, nullptr);
@@ -178,6 +182,11 @@ void ClientApp::handleClientConnected()
 
 void ClientApp::handleClientFailed(const Event &e)
 {
+  LOG_DEBUG(
+      "client failed event: currentServerIndex=%zu resolvedAddressIndex=%zu resolvedCount=%zu", m_currentServerIndex,
+      m_lastServerAddressIndex, m_client->getLastResolvedAddressesCount()
+  );
+
   if ((++m_lastServerAddressIndex) < m_client->getLastResolvedAddressesCount()) {
     // Try next resolved address for current hostname
     std::unique_ptr<Client::FailInfo> info(static_cast<Client::FailInfo *>(e.getData()));

@@ -173,21 +173,26 @@ void *EiScreen::getEventTarget() const
 
 bool EiScreen::getClipboard(ClipboardID id, IClipboard *clipboard) const
 {
-  // If using portal input capture, get clipboard from there
-  if (m_portalInputCapture) {
-    const auto sourceClipboard = m_portalInputCapture->getClipboard(id);
-    if (!sourceClipboard) {
+  try {
+    if (m_portalInputCapture) {
+      const auto sourceClipboard = m_portalInputCapture->getClipboard(id);
+      if (!sourceClipboard) {
+        return false;
+      }
+      return IClipboard::copy(clipboard, sourceClipboard);
+    }
+
+    if (id != kClipboardClipboard || !m_clipboard) {
       return false;
     }
-    return IClipboard::copy(clipboard, sourceClipboard);
-  }
 
-  // Otherwise use our own clipboard
-  if (!m_clipboard) {
-    return false;
+    return IClipboard::copy(clipboard, m_clipboard);
+  } catch (const std::exception &e) {
+    LOG_WARN("failed to get clipboard (id=%u): %s", id, e.what());
+  } catch (...) {
+    LOG_WARN("failed to get clipboard (id=%u): unknown error", id);
   }
-
-  return IClipboard::copy(clipboard, m_clipboard);
+  return false;
 }
 
 void EiScreen::getShape(int32_t &x, int32_t &y, int32_t &w, int32_t &h) const
@@ -446,31 +451,36 @@ void EiScreen::leave()
 
 bool EiScreen::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
-  if (!clipboard) {
-    return false;
-  }
-
-  // If using portal input capture, set clipboard there
-  if (m_portalInputCapture) {
-    IClipboard *targetClipboard = m_portalInputCapture->getClipboard(id);
-    if (!targetClipboard) {
+  try {
+    if (!clipboard) {
       return false;
     }
-    return IClipboard::copy(targetClipboard, clipboard);
+
+    if (m_portalInputCapture) {
+      IClipboard *targetClipboard = m_portalInputCapture->getClipboard(id);
+      if (!targetClipboard) {
+        return false;
+      }
+      return IClipboard::copy(targetClipboard, clipboard);
+    }
+
+    if (id != kClipboardClipboard || !m_clipboard) {
+      return false;
+    }
+
+    bool ok = IClipboard::copy(m_clipboard, clipboard);
+
+    if (ok && m_portalRemoteDesktop && id == kClipboardClipboard) {
+      m_portalRemoteDesktop->claimClipboard();
+    }
+
+    return ok;
+  } catch (const std::exception &e) {
+    LOG_WARN("failed to set clipboard (id=%u): %s", id, e.what());
+  } catch (...) {
+    LOG_WARN("failed to set clipboard (id=%u): unknown error", id);
   }
-
-  // Otherwise use our own clipboard
-  if (!m_clipboard) {
-    return false;
-  }
-
-  bool ok = IClipboard::copy(m_clipboard, clipboard);
-
-  if (ok && m_portalRemoteDesktop && id == kClipboardClipboard) {
-    m_portalRemoteDesktop->claimClipboard();
-  }
-
-  return ok;
+  return false;
 }
 
 void EiScreen::checkClipboards()

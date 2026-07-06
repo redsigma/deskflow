@@ -72,7 +72,7 @@ bool ClientProxy1_6::recvClipboard()
     );
     // save clipboard
     try {
-      m_clipboard[id].m_clipboard.unmarshall(dataCached, 0);
+      m_clipboard[id].m_clipboard.unmarshall(m_clipboardDataCached, 0);
       m_clipboard[id].m_sequenceNumber = seq;
       m_clipboardDataCached.clear();
       m_clipboardDataCached.shrink_to_fit();

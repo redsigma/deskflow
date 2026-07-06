@@ -18,6 +18,7 @@
 
 #include <climits>
 #include <string>
+#include <cstdint>
 
 class Event;
 class EventQueueTimer;
@@ -195,7 +196,7 @@ private:
   void sendClipboard(ClipboardID);
   void sendEvent(deskflow::EventTypes);
   void sendConnectionFailedEvent(const char *msg);
-  void setupConnecting();
+  void setupConnecting(uint64_t attemptId, void *eventTarget);
   void setupConnection();
   void setupScreen();
   void setupTimer();
@@ -205,8 +206,8 @@ private:
   void cleanupScreen();
   void cleanupTimer();
   void cleanupStream();
-  void handleConnected();
-  void handleConnectionFailed(const Event &event);
+  void handleConnected(uint64_t attemptId, void *eventTarget);
+  void handleConnectionFailed(const Event &event, uint64_t attemptId, void *eventTarget);
   void handleConnectTimeout();
   void handleOutputError();
   void handleDisconnected();
@@ -245,4 +246,8 @@ private:
   size_t m_maximumClipboardReceiveSize = 0;
   size_t m_maximumClipboardSize = INT_MAX;
   size_t m_resolvedAddressesCount = 0;
+  uint64_t m_connectAttemptId = 0;
+  uint64_t m_activeConnectAttemptId = 0;
+  void *m_activeConnectEventTarget = nullptr;
 };
+
