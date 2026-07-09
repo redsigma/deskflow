@@ -139,6 +139,13 @@ void MSWindowsHook::setMode(EHookMode mode)
     // no change
     return;
   }
+
+  const bool shouldClearStaleFakeInputMarker = (mode == kHOOK_RELAY_EVENTS) && g_fakeServerInput;
+  if (shouldClearStaleFakeInputMarker) {
+    LOG_WARN("clearing stale fake input marker while enabling keyboard relay");
+    g_fakeServerInput = false;
+  }
+
   g_mode = mode;
 }
 

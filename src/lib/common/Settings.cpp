@@ -352,8 +352,7 @@ void Settings::restoreDefaultSettings()
 
 QString Settings::portableSettingsFile()
 {
-  static const auto filename =
-      QStringLiteral("%1/settings/%2.conf").arg(QCoreApplication::applicationDirPath(), kAppName);
+  const auto filename = QStringLiteral("%1/settings/%2.conf").arg(QCoreApplication::applicationDirPath(), kAppName);
   return QFileInfo(filename).absoluteFilePath();
 }
 

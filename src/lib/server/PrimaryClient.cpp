@@ -52,6 +52,11 @@ void PrimaryClient::fakeInputEnd()
   }
 }
 
+void PrimaryClient::recoverFromForcedLeave()
+{
+  m_screen->getPlatformScreen()->updateKeyState();
+}
+
 int32_t PrimaryClient::getJumpZoneSize() const
 {
   return m_screen->getJumpZoneSize();
@@ -109,8 +114,6 @@ void PrimaryClient::enter(int32_t xAbs, int32_t yAbs, uint32_t seqNum, KeyModifi
     m_screen->warpCursor(xAbs, yAbs);
   }
   m_screen->enter(mask);
-  m_screen->getPlatformScreen()->fakeAllKeysUp();
-  m_screen->getPlatformScreen()->updateKeyState();
 }
 
 bool PrimaryClient::leave()

@@ -1351,6 +1351,18 @@ void Server::handleSwitchWaitTimeout()
 
 void Server::handleClientDisconnected(BaseClientProxy *client)
 {
+  const bool shouldIgnoreStaleDisconnectEvent =
+      !m_clientSet.contains(client) && !m_oldClients.contains(client) && client != m_active && client != m_activeSaver;
+  if (shouldIgnoreStaleDisconnectEvent) {
+    LOG_WARN(
+        "ignoring stale client disconnect event: client=%p active=\"%s\"(%p) activeSaver=\"%s\"(%p) "
+        "clients=%zu oldClients=%zu",
+        client, getName(m_active).c_str(), m_active, getName(m_activeSaver).c_str(), m_activeSaver, m_clients.size(),
+        m_oldClients.size()
+    );
+    return;
+  }
+
   const auto clientName = getName(client);
   LOG_INFO(
       "server client disconnect begin: client=\"%s\"(%p) active=\"%s\"(%p) activeSaver=\"%s\"(%p) "
@@ -1374,7 +1386,8 @@ void Server::handleClientDisconnected(BaseClientProxy *client)
   removeActiveClient(client);
   removeOldClient(client);
 
-  if (disconnectWasActive && m_active != m_primaryClient) {
+  const bool activeDisconnectNeedsRepair = disconnectWasActive && (m_active != m_primaryClient);
+  if (activeDisconnectNeedsRepair) {
     LOG_WARN(
         "active-client disconnect invariant violation: client \"%s\" was active but active did not return to primary",
         clientName.c_str()
@@ -2301,6 +2314,7 @@ void Server::forceLeaveClient(const BaseClientProxy *client)
     // screen saver)
     if (m_activeSaver == nullptr) {
       m_primaryClient->enter(m_x, m_y, m_seqNum, m_primaryClient->getToggleMask(), false);
+      m_primaryClient->recoverFromForcedLeave();
       LOG_DEBUG("forceLeaveClient entered primary for client \"%s\"(%p)", getName(client).c_str(), client);
     } else {
       LOG_DEBUG(

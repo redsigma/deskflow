@@ -65,6 +65,9 @@ public:
   */
   void fakeInputEnd();
 
+  //! Rebaseline primary keyboard state after forcibly returning from a secondary screen.
+  void recoverFromForcedLeave();
+
   //@}
   //! @name accessors
   //@{
