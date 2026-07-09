@@ -217,11 +217,17 @@ void ClientListener::handleClientDisconnected(ClientProxy *client)
       m_waitingClients.erase(i);
       m_events->removeHandler(EventTypes::ClientProxyDisconnected, client);
 
-      // pull out the socket before deleting the client so
-      // we know which socket we no longer need
-      auto *socket = static_cast<IDataSocket *>(client->getStream());
+      // Pull out the wrapped socket before deleting the client so
+      // we know which socket we no longer need.
+      auto *filter = dynamic_cast<StreamFilter *>(client->getStream());
+      IDataSocket *socket = nullptr;
+      if (filter && !filter->adoptedStream()) {
+        socket = dynamic_cast<IDataSocket *>(filter->getStream());
+      }
       delete client;
-      removeClientSocket(socket);
+      if (socket) {
+        removeClientSocket(socket);
+      }
 
       break;
     }

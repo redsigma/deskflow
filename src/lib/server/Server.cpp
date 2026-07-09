@@ -323,6 +323,10 @@ void Server::sendConnectedClientsIpc() const
 
 std::string Server::getName(const BaseClientProxy *client) const
 {
+  if (client == nullptr) {
+    return "<null>";
+  }
+
   std::string name = m_config->getCanonicalName(client->getName());
   if (name.empty()) {
     name = client->getName();
